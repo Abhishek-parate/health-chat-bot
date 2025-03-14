@@ -11,67 +11,57 @@ datasource db {
 }
 
 model User {
-  id            String         @id
-  email         String         @unique
-  firstName     String
-  lastName      String
-  role          String         @default("user")
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  healthProfile HealthProfile?
-  conversations Conversation[]
-
-  @@map("users")
+  id              String          @id
+  email           String          @unique
+  firstName       String
+  lastName        String
+  role            String          @default("user")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime?       @updatedAt
+  healthProfile   HealthProfile?
+  conversations   Conversation[]
 }
 
 model HealthProfile {
-  id                String    @id @default(uuid())
-  userId            String    @unique
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  age               Int?
-  gender            String?
-  height            Float?
-  weight            Float?
-  medicalConditions String[]  @default([])
-  allergies         String[]  @default([])
-  medications       String[]  @default([])
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-
-  @@map("health_profiles")
+  id                 String    @id @default(uuid())
+  userId             String    @unique
+  age                Int?
+  gender             String?
+  height             Float?    // in cm
+  weight             Float?    // in kg
+  medicalConditions  String[]  @default([])
+  allergies          String[]  @default([])
+  medications        String[]  @default([])
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime? @updatedAt
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Conversation {
-  id        String    @id
+  id        String      @id @default(uuid())
   title     String
   userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime?   @updatedAt
   messages  Message[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@map("conversations")
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Message {
-  id             String       @id
-  content        String
-  role           String
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  createdAt      DateTime     @default(now())
-
-  @@map("messages")
+  id              String        @id @default(uuid())
+  content         String        @db.Text
+  role            String        // "user" or "assistant"
+  conversationId  String
+  createdAt       DateTime      @default(now())
+  conversation    Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 }
 
 model HealthAdvice {
-  id        String   @id @default(uuid())
-  title     String
-  content   String
-  category  String
-  tags      String[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("health_advice")
+  id          String     @id @default(uuid())
+  title       String
+  content     String     @db.Text
+  category    String
+  tags        String[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime?  @updatedAt
 }
