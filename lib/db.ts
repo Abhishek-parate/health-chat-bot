@@ -1,7 +1,6 @@
-// lib/db.ts
 import { PrismaClient } from '@prisma/client';
 import * as Constants from 'expo-constants';
-
+import { v4 as uuidv4 } from './uuid-helper';
 
 // Initialize Prisma client
 const prisma = new PrismaClient();
@@ -73,8 +72,8 @@ export async function initializeDatabase() {
     }
     
     // In production, we would connect to the real database
-    // await prisma.$connect();
-    // console.log('Successfully connected to NeonDB');
+    await prisma.$connect();
+    console.log('Successfully connected to NeonDB');
     
     return true;
   } catch (error) {
@@ -85,17 +84,23 @@ export async function initializeDatabase() {
 }
 
 // User-related operations
-export async function createUserProfile(user: Omit<UserProfile, 'updatedAt'>) {
+export async function createUser(userId: string, email: string, name: string) {
+  // Split name into first and last if possible
+  const nameParts = name.split(' ');
+  const firstName = nameParts[0] || '';
+  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+  
   return prisma.user.create({
     data: {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.role,
-      createdAt: user.createdAt,
+      id: userId,
+      email: email,
+      firstName: firstName,
+      lastName: lastName,
+      role: 'user',
+      createdAt: new Date(),
       healthProfile: {
         create: {
+          id: uuidv4(),
           createdAt: new Date()
         }
       }
@@ -161,13 +166,13 @@ export async function getHealthProfile(userId: string) {
 }
 
 // Conversation-related operations
-export async function createConversation(data: Omit<Conversation, 'updatedAt' | 'messages'>) {
+export async function createConversation(conversationId: string, title: string, userId: string) {
   return prisma.conversation.create({
     data: {
-      id: data.id,
-      title: data.title,
-      userId: data.userId,
-      createdAt: data.createdAt
+      id: conversationId,
+      title: title,
+      userId: userId,
+      createdAt: new Date()
     }
   });
 }
@@ -186,12 +191,32 @@ export async function getConversationById(conversationId: string) {
 }
 
 export async function getConversationsByUserId(userId: string) {
-  return prisma.conversation.findMany({
+  // Get all conversations for this user
+  const conversations = await prisma.conversation.findMany({
     where: { userId },
     orderBy: {
       updatedAt: 'desc'
+    },
+    include: {
+      messages: {
+        orderBy: {
+          createdAt: 'desc'
+        },
+        take: 1 // Get only the latest message for preview
+      }
     }
   });
+  
+  // Format data for the UI
+  return conversations.map(conv => ({
+    id: conv.id,
+    title: conv.title,
+    preview: conv.messages && conv.messages.length > 0 
+      ? conv.messages[0].content.substring(0, 60) + (conv.messages[0].content.length > 60 ? '...' : '')
+      : '',
+    lastMessageDate: conv.updatedAt || conv.createdAt,
+    category: 'Health' // Default category, can be customized later
+  }));
 }
 
 export async function updateConversationTitle(conversationId: string, title: string) {
@@ -217,24 +242,25 @@ export async function deleteConversation(conversationId: string) {
 }
 
 // Message-related operations
-export async function createMessage(message: Omit<ChatMessage, 'updatedAt'>) {
-  const result = await prisma.message.create({
+export async function createMessage(messageId: string, content: string, role: 'user' | 'assistant', conversationId: string) {
+  // Create the message
+  const message = await prisma.message.create({
     data: {
-      id: message.id,
-      content: message.content,
-      role: message.role,
-      conversationId: message.conversationId,
-      createdAt: message.createdAt
+      id: messageId,
+      content: content,
+      role: role,
+      conversationId: conversationId,
+      createdAt: new Date()
     }
   });
 
   // Update the conversation's updatedAt timestamp
   await prisma.conversation.update({
-    where: { id: message.conversationId },
+    where: { id: conversationId },
     data: { updatedAt: new Date() }
   });
 
-  return result;
+  return message;
 }
 
 export async function getMessagesByConversationId(conversationId: string) {

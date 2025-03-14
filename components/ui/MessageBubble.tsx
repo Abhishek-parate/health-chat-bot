@@ -1,8 +1,5 @@
-
-// components/ui/MessageBubble.tsx
 import React from 'react';
 import { View, Text } from 'react-native';
-import { formatRelativeTime } from '@/utils/dateFormat';
 
 interface MessageBubbleProps {
   content: string;
@@ -11,17 +8,24 @@ interface MessageBubbleProps {
 }
 
 export function MessageBubble({ content, isUser, timestamp }: MessageBubbleProps) {
+  // Format timestamp to show only time (HH:MM)
+  const formattedTime = timestamp.toLocaleTimeString([], { 
+    hour: '2-digit', 
+    minute: '2-digit' 
+  });
+
   return (
-    <View 
-      className={`mb-3 max-w-[85%] ${isUser ? 'self-end' : 'self-start'}`}
-    >
-      <View
+    <View className={`mb-3 max-w-[85%] ${isUser ? 'self-end' : 'self-start'}`}>
+      <View 
         className={`rounded-2xl p-3 ${
-          isUser ? 'bg-primary rounded-tr-sm' : 'bg-gray-200 rounded-tl-sm'
+          isUser 
+            ? 'bg-blue-500 rounded-tr-sm' 
+            : 'bg-gray-200 rounded-tl-sm'
         }`}
       >
-        <Text
+        <Text 
           className={`${isUser ? 'text-white' : 'text-gray-800'}`}
+          selectable={true}
         >
           {content}
         </Text>
@@ -32,7 +36,7 @@ export function MessageBubble({ content, isUser, timestamp }: MessageBubbleProps
           isUser ? 'text-right' : 'text-left'
         }`}
       >
-        {formatRelativeTime(timestamp)}
+        {formattedTime}
       </Text>
     </View>
   );

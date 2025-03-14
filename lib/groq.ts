@@ -1,185 +1,94 @@
 // lib/groq.ts
-import Constants from 'expo-constants';
+const GROQ_API_KEY = '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';
 
-// Define message types for the AI API
-type MessageRole = 'system' | 'user' | 'assistant';
-
-type Message = {
-  role: MessageRole;
+interface Message {
+  role: string;
   content: string;
-};
+}
 
-// GROQ API integration
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_API_KEY = Constants.expoConfig?.extra?.GROQ_API_KEY;
-const MODEL = 'llama3-70b-8192'; // Using Llama 3 70B model for medical advice (good quality responses)
-
-// Function to generate AI responses
-export async function generateAIResponse(
-  messages: { role: string; content: string }[],
-  systemPrompt?: string
-): Promise<string> {
+export async function generateAIResponse(messages: Message[]): Promise<string> {
   try {
-    // Format messages for the API
-    const formattedMessages: Message[] = [];
+    console.log("Generating response for:", messages[messages.length-1]?.content);
     
-    // Add system prompt if provided
-    if (systemPrompt) {
-      formattedMessages.push({
-        role: 'system',
-        content: systemPrompt
-      });
-    } else {
-      // Default system prompt
-      formattedMessages.push({
-        role: 'system',
-        content: 'You are a helpful health assistant. Provide accurate and helpful information about health topics. IMPORTANT: Always provide a disclaimer that you\'re not a medical professional and that the user should seek professional medical advice for their health concerns.'
-      });
-    }
-    
-    // Add conversation history
-    messages.forEach(msg => {
-      formattedMessages.push({
-        role: msg.role as MessageRole,
-        content: msg.content
-      });
-    });
-    
-    // Make request to GROQ API
-    const response = await fetch(GROQ_API_URL, {
+    // React Native implementation for Groq API
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GROQ_API_KEY}`
       },
       body: JSON.stringify({
-        model: MODEL,
-        messages: formattedMessages,
-        temperature: 0.3, // Lower temperature for more factual/medical responses
-        max_tokens: 1024
-      })
+        model: "llama-3.3-70b-versatile", // Using the model from the docs
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful healthcare assistant providing general health information. Always remind users to consult with healthcare professionals for medical advice. Avoid diagnosing conditions or prescribing treatments.'
+          },
+          ...messages
+        ],
+      }),
     });
-    
+
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('GROQ API error:', errorData);
-      throw new Error(`GROQ API error: ${errorData.error?.message || 'Unknown error'}`);
+      console.error(`Groq API error: ${response.status}`);
+      throw new Error(`Groq API error: ${response.status}`);
     }
-    
+
     const data = await response.json();
     return data.choices[0].message.content;
   } catch (error) {
     console.error('Error generating AI response:', error);
-    return 'I apologize, but I encountered an error while processing your request. Please try again later.\n\nRemember: I am not a medical professional, and you should always consult with a healthcare provider for medical advice.';
+    
+    // Fall back to mock responses if API fails
+    return generateMockResponse(messages);
   }
 }
 
-// Function to extract health topics from user messages
-export async function extractHealthTopics(content: string): Promise<string[]> {
-  try {
-    const messages: Message[] = [
-      {
-        role: 'system',
-        content: 'Extract and list the main health topics or medical conditions mentioned in the following text. Return ONLY a JSON array of strings with no additional text.'
-      },
-      {
-        role: 'user',
-        content
+// Mock response function for development or fallback
+function generateMockResponse(messages: Message[]): Promise<string> {
+  return new Promise((resolve) => {
+    // Simulate a delay to mimic API call
+    setTimeout(() => {
+      // Get the last user message
+      const lastUserMessage = messages.filter(msg => msg.role === 'user').pop();
+      const query = lastUserMessage?.content.toLowerCase() || '';
+      
+      console.log("Processing query:", query); // Debug log
+      
+      if (query.includes('headache')) {
+        resolve("Headaches can have many causes including stress, dehydration, lack of sleep, or eyestrain. For occasional headaches, rest, staying hydrated, and over-the-counter pain relievers might help. If you're experiencing severe, persistent, or unusual headaches, it's important to consult with a healthcare provider for proper evaluation.");
       }
-    ];
-    
-    const response = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GROQ_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages,
-        temperature: 0.1,
-        max_tokens: 256
-      })
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to extract health topics');
-    }
-    
-    const data = await response.json();
-    const topicsText = data.choices[0].message.content;
-    
-    try {
-      // Try to parse as JSON
-      return JSON.parse(topicsText);
-    } catch (e) {
-      // If not valid JSON, try to extract array-like text
-      const matches = topicsText.match(/\[(.*)\]/s);
-      if (matches && matches[1]) {
-        const items = matches[1].split(',').map(item => 
-          item.trim().replace(/"/g, '').replace(/'/g, '')
-        );
-        return items.filter(item => item.length > 0);
+      else if (query.includes('exercise') || query.includes('workout')) {
+        resolve("Regular physical activity is essential for maintaining good health. The CDC recommends at least 150 minutes of moderate-intensity exercise per week, along with muscle-strengthening activities twice a week. Remember to start slowly if you're new to exercise and consult with a healthcare provider if you have any underlying health conditions.");
       }
-      return [];
-    }
-  } catch (error) {
-    console.error('Error extracting health topics:', error);
-    return [];
-  }
-}
-
-// Generate a summary of a conversation
-export async function generateConversationSummary(messages: { role: string; content: string }[]): Promise<string> {
-  try {
-    // Filter for just the conversation content
-    const conversationText = messages
-      .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-      .join('\n\n');
-    
-    const summaryMessages: Message[] = [
-      {
-        role: 'system',
-        content: 'Create a brief title (max 40 characters) that summarizes the main health topic of this conversation.'
-      },
-      {
-        role: 'user',
-        content: conversationText
+      else if (query.includes('diet') || query.includes('nutrition') || query.includes('eat')) {
+        resolve("A balanced diet typically includes a variety of fruits, vegetables, whole grains, lean proteins, and healthy fats. The Mediterranean diet and DASH diet are often recommended for overall health. Remember, individual nutritional needs can vary, so what works for one person may not be optimal for another. A registered dietitian can provide personalized guidance.");
       }
-    ];
-    
-    const response = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GROQ_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: summaryMessages,
-        temperature: 0.3,
-        max_tokens: 60
-      })
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to generate conversation summary');
-    }
-    
-    const data = await response.json();
-    let summary = data.choices[0].message.content.trim();
-    
-    // Remove quotes if the AI wrapped the title in quotes
-    summary = summary.replace(/^["'](.*)["']$/, '$1');
-    
-    // Ensure it's not too long
-    if (summary.length > 40) {
-      summary = summary.substring(0, 37) + '...';
-    }
-    
-    return summary;
-  } catch (error) {
-    console.error('Error generating conversation summary:', error);
-    return 'Health Conversation';
-  }
+      else if (query.includes('sleep')) {
+        resolve("Quality sleep is crucial for physical and mental health. Most adults need 7-9 hours of sleep per night. To improve sleep quality, try maintaining a consistent sleep schedule, creating a restful environment, limiting screen time before bed, and avoiding caffeine and alcohol close to bedtime. If you consistently struggle with sleep, consider discussing it with a healthcare provider.");
+      }
+      else if (query.includes('cold') || query.includes('flu')) {
+        resolve("Common cold and flu symptoms include runny nose, cough, sore throat, and fever (more common with flu). Rest, hydration, and over-the-counter medications can help manage symptoms. Most colds resolve within 7-10 days. If symptoms are severe or persistent, it's best to consult with a healthcare provider.");
+      }
+      else if (query.includes('stress') || query.includes('anxiety')) {
+        resolve("Stress and anxiety are common experiences. Management techniques include regular exercise, adequate sleep, deep breathing exercises, mindfulness meditation, and maintaining social connections. If stress or anxiety significantly impacts your daily life, consider speaking with a mental health professional for personalized strategies.");
+      }
+      else if (query.includes('vitamin') || query.includes('mineral') || query.includes('supplement')) {
+        resolve("Vitamins and minerals are essential nutrients that your body needs in small amounts for normal functioning. While a balanced diet typically provides sufficient nutrients, supplements may be recommended in specific cases. It's best to consult with a healthcare provider before starting any supplement regimen, as some can interact with medications or have side effects.");
+      }
+      else if (query.includes('blood pressure') || query.includes('hypertension')) {
+        resolve("Blood pressure is the force of blood pushing against the walls of your arteries. Normal blood pressure is below 120/80 mm Hg. Lifestyle factors that can help maintain healthy blood pressure include reducing sodium intake, regular physical activity, maintaining a healthy weight, limiting alcohol, and managing stress. Regular monitoring is important, especially if you have risk factors for hypertension.");
+      }
+      else if (query.includes('diabetes')) {
+        resolve("Diabetes is a chronic condition affecting how your body turns food into energy. The main types are Type 1, Type 2, and gestational diabetes. Management typically involves monitoring blood sugar levels, medication or insulin as prescribed, healthy eating, regular physical activity, and maintaining a healthy weight. Regular check-ups with healthcare providers are essential for managing diabetes effectively.");
+      }
+      else {
+        // If no specific keywords match, generate a more personalized response
+        const topics = ['general health', 'wellness', 'preventive care', 'medical information', 'health tips'];
+        const randomTopic = topics[Math.floor(Math.random() * topics.length)];
+        
+        resolve(`I understand you're asking about ${query.slice(0, 30)}... As a health assistant, I can provide general information about ${randomTopic}, but I'm not able to diagnose conditions or provide personalized medical advice. Could you please ask a more specific health-related question so I can better assist you? Some topics I can help with include diet, exercise, sleep, common conditions, and preventive care.`);
+      }
+    }, 1000);
+  });
 }

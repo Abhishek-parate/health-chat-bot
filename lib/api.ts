@@ -1,5 +1,4 @@
-// lib/api.ts
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from './uuid-helper';
 import * as db from './db';
 import { generateAIResponse } from './groq';
 import { ApiResponse, Conversation, ChatMessage, User, UserRole } from '@/types';
@@ -26,31 +25,6 @@ export async function getUserProfile(userId: string): Promise<ApiResponse<User>>
   } catch (error) {
     console.error('Error getting user profile:', error);
     return { success: false, error: 'Failed to get user profile' };
-  }
-}
-
-export async function getAllUserAccounts(): Promise<ApiResponse<User[]>> {
-  try {
-    const users = await db.getAllUsers();
-    return { success: true, data: users };
-  } catch (error) {
-    console.error('Error getting all users:', error);
-    return { success: false, error: 'Failed to get all users' };
-  }
-}
-
-export async function updateUserRole(userId: string, role: UserRole): Promise<ApiResponse<User>> {
-  try {
-    const user = await db.getUserById(userId);
-    if (!user) {
-      return { success: false, error: 'User not found' };
-    }
-    
-    const updatedUser = await db.createUser(user.id, user.email, user.name, role);
-    return { success: true, data: updatedUser };
-  } catch (error) {
-    console.error('Error updating user role:', error);
-    return { success: false, error: 'Failed to update user role' };
   }
 }
 
@@ -122,22 +96,17 @@ export async function sendMessage(conversationId: string, content: string): Prom
     const aiMessageId = uuidv4();
     const aiMessage = await db.createMessage(aiMessageId, aiResponse, 'assistant', conversationId);
     
-    // Update conversation timestamp
-    await db.updateConversationTitle(conversationId, content.substring(0, 50) + (content.length > 50 ? '...' : ''));
+    // Convert to ChatMessage format
+    const chatMessage: ChatMessage = {
+      id: aiMessage.id,
+      content: aiMessage.content,
+      role: aiMessage.role,
+      createdAt: aiMessage.createdAt
+    };
     
-    return { success: true, data: aiMessage };
+    return { success: true, data: chatMessage };
   } catch (error) {
     console.error('Error sending message:', error);
     return { success: false, error: 'Failed to send message' };
-  }
-}
-
-export async function deleteUserConversation(conversationId: string): Promise<ApiResponse<void>> {
-  try {
-    await db.deleteConversation(conversationId);
-    return { success: true };
-  } catch (error) {
-    console.error('Error deleting conversation:', error);
-    return { success: false, error: 'Failed to delete conversation' };
   }
 }
