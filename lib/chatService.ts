@@ -1,271 +1,309 @@
 // lib/chatService.ts
-import { supabase } from './supabase';
-import { generateAIResponse } from './groq';
-import { v4 as uuidv4 } from 'uuid';
-
-// Types
-export interface ChatMessage {
-  id: string;
-  conversationId: string;
-  content: string;
-  role: 'user' | 'assistant' | 'system';
-  createdAt: Date;
-}
-
-export interface Conversation {
-  id: string;
-  userId: string;
-  title: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-// Create a new conversation
-export async function createConversation(userId: string, title: string = 'New Chat'): Promise<Conversation | null> {
-  try {
-    const conversationId = uuidv4();
-    const now = new Date().toISOString();
-    
-    const { data, error } = await supabase
-      .from('health_conversations')
-      .insert([
-        {
-          id: conversationId,
-          user_id: userId,
-          title,
-          created_at: now,
-          updated_at: now
-        }
-      ])
-      .select('*')
-      .single();
-    
-    if (error) {
-      console.error('Error creating conversation:', error);
+import { 
+    MessageService, 
+    ConversationService, 
+    DoctorRequestService,
+    Message, 
+    Conversation,
+    ProfileService
+  } from './supabaseService';
+  import { generateAIResponse } from './groq';
+  
+  export interface ChatMessage {
+    id: string;
+    role: 'user' | 'doctor' | 'assistant';
+    content: string;
+    timestamp: string;
+    sender?: {
+      id: string;
+      name?: string;
+      avatar?: string;
+    };
+    isRead: boolean;
+  }
+  
+  // Convert database message to chat message format
+  export function formatMessage(message: Message, senderName?: string, senderAvatar?: string): ChatMessage {
+    return {
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      timestamp: message.created_at,
+      sender: message.sender_id ? {
+        id: message.sender_id,
+        name: senderName,
+        avatar: senderAvatar
+      } : undefined,
+      isRead: message.is_read
+    };
+  }
+  
+  // Create a new conversation
+  export async function createConversation(userId: string): Promise<Conversation | null> {
+    try {
+      const conversation = await ConversationService.createConversation(userId);
+      
+      if (!conversation) {
+        throw new Error('Failed to create conversation');
+      }
+      
+      // Send a welcome message from the assistant
+      await MessageService.sendMessage(
+        conversation.id,
+        'assistant',
+        'Hello! I\'m your HealthAssist AI. How can I help you today? You can ask me general health questions, or request to speak with a healthcare professional if you need more specific advice.'
+      );
+      
+      return conversation;
+    } catch (error) {
+      console.error('Error in createConversation:', error);
       return null;
     }
-    
-    // Add system message to initialize conversation
-    await addMessage({
-      conversationId,
-      content: 'You are a helpful healthcare assistant providing general health information. Always remind users to consult with healthcare professionals for medical advice. Avoid diagnosing conditions or prescribing treatments.',
-      role: 'system',
-    });
-    
-    return {
-      id: data.id,
-      userId: data.user_id,
-      title: data.title,
-      createdAt: new Date(data.created_at),
-      updatedAt: new Date(data.updated_at)
-    };
-  } catch (error) {
-    console.error('Error in createConversation:', error);
-    return null;
   }
-}
-
-// Get user conversations
-export async function getUserConversations(userId: string): Promise<Conversation[]> {
-  try {
-    const { data, error } = await supabase
-      .from('health_conversations')
-      .select('*')
-      .eq('user_id', userId)
-      .order('updated_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error fetching conversations:', error);
-      return [];
-    }
-    
-    return data.map(item => ({
-      id: item.id,
-      userId: item.user_id,
-      title: item.title,
-      createdAt: new Date(item.created_at),
-      updatedAt: new Date(item.updated_at)
-    }));
-  } catch (error) {
-    console.error('Error in getUserConversations:', error);
-    return [];
-  }
-}
-
-// Add a message to a conversation
-export async function addMessage({
-  conversationId,
-  content,
-  role,
-  id = uuidv4(),
-  createdAt = new Date()
-}: {
-  conversationId: string,
-  content: string,
-  role: 'user' | 'assistant' | 'system',
-  id?: string,
-  createdAt?: Date
-}): Promise<ChatMessage | null> {
-  try {
-    const { data, error } = await supabase
-      .from('health_messages')
-      .insert([
-        {
-          id,
-          conversation_id: conversationId,
-          content,
-          role,
-          created_at: createdAt.toISOString()
+  
+  // Get all messages for a conversation
+  export async function getConversationMessages(conversationId: string): Promise<ChatMessage[]> {
+    try {
+      const messages = await MessageService.getMessages(conversationId);
+      
+      // Get sender information for each message with a sender_id
+      const formattedMessages = await Promise.all(messages.map(async (msg) => {
+        if (msg.sender_id) {
+          const profile = await ProfileService.getProfile(msg.sender_id);
+          return formatMessage(
+            msg, 
+            profile?.full_name || 'Unknown User', 
+            profile?.avatar_url
+          );
         }
-      ])
-      .select('*')
-      .single();
-    
-    if (error) {
-      console.error('Error adding message:', error);
-      return null;
-    }
-    
-    // Update conversation's updated_at timestamp
-    await supabase
-      .from('health_conversations')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', conversationId);
-    
-    return {
-      id: data.id,
-      conversationId: data.conversation_id,
-      content: data.content,
-      role: data.role,
-      createdAt: new Date(data.created_at)
-    };
-  } catch (error) {
-    console.error('Error in addMessage:', error);
-    return null;
-  }
-}
-
-// Get messages for a conversation
-export async function getConversationMessages(conversationId: string): Promise<ChatMessage[]> {
-  try {
-    const { data, error } = await supabase
-      .from('health_messages')
-      .select('*')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true });
-    
-    if (error) {
-      console.error('Error fetching messages:', error);
+        return formatMessage(msg);
+      }));
+      
+      return formattedMessages;
+    } catch (error) {
+      console.error('Error in getConversationMessages:', error);
       return [];
     }
-    
-    return data.map(item => ({
-      id: item.id,
-      conversationId: item.conversation_id,
-      content: item.content,
-      role: item.role,
-      createdAt: new Date(item.created_at)
-    }));
-  } catch (error) {
-    console.error('Error in getConversationMessages:', error);
-    return [];
   }
-}
-
-// Delete a conversation and its messages
-export async function deleteConversation(conversationId: string): Promise<boolean> {
-  try {
-    // First delete all messages
-    const { error: messagesError } = await supabase
-      .from('health_messages')
-      .delete()
-      .eq('conversation_id', conversationId);
-    
-    if (messagesError) {
-      console.error('Error deleting messages:', messagesError);
+  
+  // Send a message and get AI response
+  export async function sendMessageAndGetResponse(
+    conversationId: string, 
+    message: string,
+    userId?: string
+  ): Promise<{ userMessage?: ChatMessage; aiMessage?: ChatMessage }> {
+    try {
+      // Save user message
+      const userMessage = await MessageService.sendMessage(
+        conversationId,
+        'user',
+        message,
+        userId
+      );
+      
+      if (!userMessage) {
+        throw new Error('Failed to save user message');
+      }
+      
+      // Get conversation details to check if this is a doctor chat
+      const conversation = await ConversationService.getConversation(conversationId);
+      
+      if (!conversation) {
+        throw new Error('Conversation not found');
+      }
+      
+      // Get user profile for formatting message
+      let userProfile = null;
+      if (userId) {
+        userProfile = await ProfileService.getProfile(userId);
+      }
+      
+      // If this is a chat with a doctor, don't generate AI response
+      if (conversation.is_doctor_chat && conversation.doctor_id) {
+        return { 
+          userMessage: formatMessage(
+            userMessage, 
+            userProfile?.full_name,
+            userProfile?.avatar_url
+          ) 
+        };
+      }
+      
+      // Get conversation history for context
+      const messageHistory = await MessageService.getMessages(conversationId);
+      
+      // Format messages for the AI
+      const formattedHistory = messageHistory.map(msg => ({
+        role: msg.role === 'assistant' ? 'assistant' : 'user',
+        content: msg.content
+      }));
+      
+      // Generate AI response
+      const aiResponse = await generateAIResponse(formattedHistory);
+      
+      // Save AI response
+      const aiMessage = await MessageService.sendMessage(
+        conversationId,
+        'assistant',
+        aiResponse
+      );
+      
+      if (!aiMessage) {
+        throw new Error('Failed to save AI response');
+      }
+      
+      return { 
+        userMessage: formatMessage(
+          userMessage,
+          userProfile?.full_name,
+          userProfile?.avatar_url
+        ),
+        aiMessage: formatMessage(aiMessage)
+      };
+    } catch (error) {
+      console.error('Error in sendMessageAndGetResponse:', error);
+      throw error;
+    }
+  }
+  
+  // Request a doctor consultation
+  export async function requestDoctorConsultation(
+    userId: string,
+    reason: string
+  ): Promise<{ success: boolean; conversationId?: string }> {
+    try {
+      const { request, conversation } = await DoctorRequestService.createDoctorRequest(
+        userId,
+        reason
+      );
+      
+      if (!request || !conversation) {
+        throw new Error('Failed to create doctor request');
+      }
+      
+      // Add a system message about the request status
+      await MessageService.sendMessage(
+        conversation.id,
+        'assistant',
+        'Your request to speak with a healthcare professional has been submitted. ' +
+        'A doctor will be with you as soon as possible. You can continue to chat with me ' +
+        'in the meantime if you have general health questions.'
+      );
+      
+      return { 
+        success: true,
+        conversationId: conversation.id
+      };
+    } catch (error) {
+      console.error('Error in requestDoctorConsultation:', error);
+      return { success: false };
+    }
+  }
+  
+  // Mark all messages in a conversation as read
+  export async function markConversationAsRead(conversationId: string, userId: string): Promise<boolean> {
+    try {
+      return await MessageService.markMessagesAsRead(conversationId, userId);
+    } catch (error) {
+      console.error('Error in markConversationAsRead:', error);
       return false;
     }
-    
-    // Then delete the conversation
-    const { error: conversationError } = await supabase
-      .from('health_conversations')
-      .delete()
-      .eq('id', conversationId);
-    
-    if (conversationError) {
-      console.error('Error deleting conversation:', conversationError);
-      return false;
-    }
-    
-    return true;
-  } catch (error) {
-    console.error('Error in deleteConversation:', error);
-    return false;
   }
-}
-
-// Update conversation title
-export async function updateConversationTitle(conversationId: string, title: string): Promise<boolean> {
-  try {
-    const { error } = await supabase
-      .from('health_conversations')
-      .update({ 
-        title,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', conversationId);
-    
-    if (error) {
-      console.error('Error updating conversation title:', error);
-      return false;
+  
+  // Get all conversations for a user with additional metadata
+  export async function getUserConversations(userId: string): Promise<any[]> {
+    try {
+      const conversations = await ConversationService.getUserConversations(userId);
+      
+      // Enhance conversations with additional data
+      const enhancedConversations = await Promise.all(conversations.map(async (convo) => {
+        // Get the last message for preview
+        const messages = await MessageService.getMessages(convo.id);
+        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+        
+        // Get unread message count
+        const { count: unreadCount } = await MessageService.getUnreadMessagesForConversation(
+          convo.id, 
+          userId
+        );
+        
+        // Get doctor info if this is a doctor chat
+        let doctorInfo = null;
+        if (convo.is_doctor_chat && convo.doctor_id) {
+          doctorInfo = await ProfileService.getProfile(convo.doctor_id);
+        }
+        
+        // Get user info if you're the doctor viewing this conversation
+        let userInfo = null;
+        if (convo.user_id !== userId) {
+          userInfo = await ProfileService.getProfile(convo.user_id);
+        }
+        
+        return {
+          ...convo,
+          lastMessage: lastMessage ? {
+            content: lastMessage.content,
+            role: lastMessage.role,
+            timestamp: lastMessage.created_at
+          } : null,
+          unreadCount,
+          doctorInfo: doctorInfo ? {
+            name: doctorInfo.full_name,
+            avatar: doctorInfo.avatar_url,
+            specialty: doctorInfo.specialty
+          } : null,
+          userInfo: userInfo ? {
+            name: userInfo.full_name,
+            avatar: userInfo.avatar_url
+          } : null
+        };
+      }));
+      
+      return enhancedConversations;
+    } catch (error) {
+      console.error('Error in getUserConversations:', error);
+      return [];
     }
-    
-    return true;
-  } catch (error) {
-    console.error('Error in updateConversationTitle:', error);
-    return false;
   }
-}
-
-// Send a message and get AI response
-export async function sendMessageAndGetResponse(
-  conversationId: string,
-  message: string
-): Promise<{userMessage: ChatMessage | null, aiMessage: ChatMessage | null}> {
-  try {
-    // Add user message to database
-    const userMessage = await addMessage({
-      conversationId,
-      content: message,
-      role: 'user',
-    });
-    
-    if (!userMessage) {
-      throw new Error('Failed to save user message');
+  
+  // For admin and doctor: get all conversations
+  export async function getAllConversations(): Promise<any[]> {
+    try {
+      const { data: conversations, error } = await supabase
+        .from('conversations')
+        .select(`
+          *,
+          user:user_id (id, full_name, avatar_url),
+          doctor:doctor_id (id, full_name, avatar_url, specialty)
+        `)
+        .order('updated_at', { ascending: false });
+        
+      if (error) {
+        throw error;
+      }
+      
+      // Enhance conversations with message counts
+      const enhancedConversations = await Promise.all(conversations.map(async (convo) => {
+        const { count: messageCount } = await MessageService.getMessageCount(convo.id);
+        
+        // Get the last message
+        const messages = await MessageService.getMessages(convo.id);
+        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+        
+        return {
+          ...convo,
+          messageCount,
+          lastMessage: lastMessage ? {
+            content: lastMessage.content,
+            role: lastMessage.role,
+            timestamp: lastMessage.created_at
+          } : null
+        };
+      }));
+      
+      return enhancedConversations;
+    } catch (error) {
+      console.error('Error in getAllConversations:', error);
+      return [];
     }
-    
-    // Get conversation history to provide context
-    const messages = await getConversationMessages(conversationId);
-    
-    // Format messages for AI
-    const formattedMessages = messages.map(msg => ({
-      role: msg.role,
-      content: msg.content
-    }));
-    
-    // Get AI response
-    const aiResponse = await generateAIResponse(formattedMessages);
-    
-    // Add AI response to database
-    const aiMessage = await addMessage({
-      conversationId,
-      content: aiResponse,
-      role: 'assistant',
-    });
-    
-    return { userMessage, aiMessage };
-  } catch (error) {
-    console.error('Error in sendMessageAndGetResponse:', error);
-    return { userMessage: null, aiMessage: null };
   }
-}
