@@ -29,7 +29,7 @@ export default function AuthRoutesLayout() {
         contentStyle: { backgroundColor: '#f8fafc' },
         animation: 'slide_from_right',
       }}
-    >
+    >             
       <Stack.Screen name="login" />
       <Stack.Screen name="signup" />
       <Stack.Screen name="forgot-password" />
