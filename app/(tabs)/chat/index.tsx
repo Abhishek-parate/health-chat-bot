@@ -1,4 +1,4 @@
-// app/(tabs)/chat/index.tsx
+// app/(tabs)/chat/index.tsx - Updated for realtime chat
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -129,13 +129,11 @@ export default function ChatScreen() {
           user.id
         );
         
-        if (userMessage) {
-          // Update the local messages state
-          setMessages(prev => [...prev, userMessage]);
-          return '';
-        } else {
+        if (!userMessage) {
           throw new Error('Failed to send message to doctor');
         }
+        
+        return '';
       } else {
         // If it's an AI chat, use chatService
         const { userMessage, aiMessage } = await sendMessageAndGetResponse(
@@ -271,13 +269,14 @@ export default function ChatScreen() {
         className="flex-1"
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        {/* Chat Interface */}
+        {/* Chat Interface with realtime messaging */}
         <ChatInterface
           conversationId={conversationId || undefined}
           initialMessages={messages}
           onSendMessage={handleSendMessage}
           isDoctor={false}
           isDisabled={isWithDoctor && conversation?.status === 'closed'}
+          userId={user.id} // Pass user ID for realtime subscription
         />
         
         {/* Bottom padding */}

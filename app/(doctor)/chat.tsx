@@ -10,13 +10,14 @@ import {
   KeyboardAvoidingView,
   SafeAreaView
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/contexts/AuthProvider';
 import { Ionicons } from '@expo/vector-icons';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import { ConversationService, MessageService } from '@/lib/supabaseService';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/utils/supabase';
+import { clearUnreadMessageCount } from '@/utils/notificationService';
 
 export default function DoctorChatScreen() {
   const router = useRouter();
@@ -28,6 +29,23 @@ export default function DoctorChatScreen() {
   const [conversation, setConversation] = useState(null);
   const [messages, setMessages] = useState([]);
   const [patient, setPatient] = useState(null);
+  const [isScreenFocused, setIsScreenFocused] = useState(false);
+  
+  // Track when the screen becomes focused
+  useFocusEffect(
+    React.useCallback(() => {
+      setIsScreenFocused(true);
+      
+      // Clear unread message count when screen is focused
+      if (conversation?.id) {
+        clearUnreadMessageCount(conversation.id);
+      }
+      
+      return () => {
+        setIsScreenFocused(false);
+      };
+    }, [conversation?.id])
+  );
   
   // Initialize conversation on load
   useEffect(() => {
@@ -42,6 +60,9 @@ export default function DoctorChatScreen() {
         if (params.conversationId) {
           const convoId = params.conversationId.toString();
           console.log(`Loading conversation with ID: ${convoId}`);
+          
+          // Clear unread count on load
+          await clearUnreadMessageCount(convoId);
           
           // Load conversation details
           const conversationData = await ConversationService.getConversation(convoId);
@@ -297,6 +318,8 @@ export default function DoctorChatScreen() {
             onSendMessage={handleSendMessage}
             isDoctor={true}
             isDisabled={conversation?.status === 'closed'}
+            userId={user.id} // Pass user ID for realtime subscription
+            isActive={isScreenFocused} // Pass screen focus state to handle unread messages
           />
         </View>
         

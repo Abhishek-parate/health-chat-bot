@@ -5,8 +5,10 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
+import Constants from 'expo-constants';
 
 import AuthProvider from '@/contexts/AuthProvider';
+import { initSounds } from '@/utils/notificationService';
 import '../global.css';
 
 // Prevent the splash screen from auto-hiding
@@ -68,6 +70,9 @@ export default function RootLayout() {
           return;
         }
         
+        // Initialize sound notifications
+        await initSounds();
+        
         // Add a small delay for better UX
         await new Promise(resolve => setTimeout(resolve, 1000));
         
@@ -112,6 +117,7 @@ export default function RootLayout() {
               presentation: 'modal'
             }} 
           />
+          <Stack.Screen name="(doctor)" options={{ animation: 'fade' }} />
         </Stack>
       </AuthProvider>
     </>

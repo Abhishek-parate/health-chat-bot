@@ -97,7 +97,7 @@ export default function TabsLayout() {
       />
 
       <Tabs.Screen
-        name="chat/index"
+        name="conversations"
         options={{
           title: 'Chat',
           tabBarIcon: ({ focused }) => <IonTabIcon focused={focused} name="chatbubble-outline" title="Chat" />,
@@ -130,7 +130,7 @@ export default function TabsLayout() {
       />
       
       <Tabs.Screen
-        name="conversations"
+        name="chat"
         options={{
           href: null, 
         }}
