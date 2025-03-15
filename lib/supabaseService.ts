@@ -60,6 +60,33 @@ export interface HealthTopic {
   updated_at: string;
 }
 
+// Helper function to create user profile when they sign up
+export async function createUserProfile(userId: string, userData: Partial<Profile>): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .insert([{
+        id: userId,
+        full_name: userData.full_name || '',
+        avatar_url: userData.avatar_url || '',
+        role: userData.role || 'user',
+        phone_number: userData.phone_number || '',
+        phone_verified: userData.phone_verified || false,
+        status: 'offline'
+      }]);
+      
+    if (error) {
+      console.error('Error creating user profile:', error);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Exception creating user profile:', error);
+    return false;
+  }
+}
+
 // User Profile Service
 export const ProfileService = {
   async getProfile(userId: string): Promise<Profile | null> {
@@ -119,6 +146,21 @@ export const ProfileService = {
     return data as Profile[];
   },
   
+  async getAvailableDoctors(): Promise<Profile[]> {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('role', 'doctor')
+      .neq('status', 'offline');
+      
+    if (error) {
+      console.error('Error fetching available doctors:', error);
+      return [];
+    }
+    
+    return data as Profile[];
+  },
+  
   async getAllUsers(): Promise<Profile[]> {
     // This should only be callable by admins due to RLS policies
     const { data, error } = await supabase
@@ -132,6 +174,54 @@ export const ProfileService = {
     }
     
     return data as Profile[];
+  },
+  
+  async getUsersByRole(role: 'user' | 'doctor' | 'admin'): Promise<Profile[]> {
+    // This should only be callable by admins due to RLS policies
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('role', role)
+      .order('created_at', { ascending: false });
+      
+    if (error) {
+      console.error(`Error fetching ${role}s:`, error);
+      return [];
+    }
+    
+    return data as Profile[];
+  },
+  
+  async updateUserRole(userId: string, role: 'user' | 'doctor' | 'admin'): Promise<boolean> {
+    // This should only be callable by admins due to RLS policies
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+      
+    if (error) {
+      console.error('Error updating user role:', error);
+      return false;
+    }
+    
+    return true;
+  },
+  
+  async verifyPhone(userId: string): Promise<boolean> {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ 
+        phone_verified: true,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
+      
+    if (error) {
+      console.error('Error verifying phone:', error);
+      return false;
+    }
+    
+    return true;
   }
 };
 
@@ -143,7 +233,8 @@ export const ConversationService = {
       .insert([{ 
         user_id: userId,
         title: title || `Conversation ${new Date().toLocaleString()}`,
-        status: 'active'
+        status: 'active',
+        is_doctor_chat: false
       }])
       .select()
       .single();
@@ -223,6 +314,83 @@ export const ConversationService = {
     }
     
     return true;
+  },
+  
+  async closeConversation(conversationId: string): Promise<boolean> {
+    const { error } = await supabase
+      .from('conversations')
+      .update({ 
+        status: 'closed',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', conversationId);
+      
+    if (error) {
+      console.error('Error closing conversation:', error);
+      return false;
+    }
+    
+    return true;
+  },
+  
+  async deleteConversation(conversationId: string): Promise<boolean> {
+    // Delete all messages first (due to foreign key constraint)
+    const messagesDeleted = await MessageService.deleteMessagesForConversation(conversationId);
+    
+    if (!messagesDeleted) {
+      console.error('Failed to delete messages for conversation');
+      return false;
+    }
+    
+    // Now delete the conversation
+    const { error } = await supabase
+      .from('conversations')
+      .delete()
+      .eq('id', conversationId);
+      
+    if (error) {
+      console.error('Error deleting conversation:', error);
+      return false;
+    }
+    
+    return true;
+  },
+  
+  async getDoctorConversations(doctorId: string): Promise<Conversation[]> {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select(`
+        *,
+        profiles:user_id (full_name, avatar_url)
+      `)
+      .eq('doctor_id', doctorId)
+      .order('updated_at', { ascending: false });
+      
+    if (error) {
+      console.error('Error fetching doctor conversations:', error);
+      return [];
+    }
+    
+    return data as any[];
+  },
+  
+  async getAllConversations(): Promise<any[]> {
+    // This should only be callable by admins due to RLS policies
+    const { data, error } = await supabase
+      .from('conversations')
+      .select(`
+        *,
+        user:user_id (id, full_name, avatar_url),
+        doctor:doctor_id (id, full_name, avatar_url, specialty)
+      `)
+      .order('updated_at', { ascending: false });
+      
+    if (error) {
+      console.error('Error fetching all conversations:', error);
+      return [];
+    }
+    
+    return data;
   }
 };
 
@@ -318,6 +486,57 @@ export const MessageService = {
     }
     
     return count || 0;
+  },
+  
+  async getMessageCount(conversationId: string): Promise<{ count: number }> {
+    const { count, error } = await supabase
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('conversation_id', conversationId);
+      
+    if (error) {
+      console.error('Error counting messages:', error);
+      return { count: 0 };
+    }
+    
+    return { count: count || 0 };
+  },
+  
+  async getUnreadMessagesForConversation(
+    conversationId: string, 
+    userId: string
+  ): Promise<{ count: number, messages: Message[] }> {
+    // Get unread messages in this conversation not sent by the current user
+    const { data, count, error } = await supabase
+      .from('messages')
+      .select('*', { count: 'exact' })
+      .eq('conversation_id', conversationId)
+      .neq('sender_id', userId)
+      .eq('is_read', false);
+      
+    if (error) {
+      console.error('Error fetching unread messages:', error);
+      return { count: 0, messages: [] };
+    }
+    
+    return { 
+      count: count || 0, 
+      messages: data as Message[] 
+    };
+  },
+  
+  async deleteMessagesForConversation(conversationId: string): Promise<boolean> {
+    const { error } = await supabase
+      .from('messages')
+      .delete()
+      .eq('conversation_id', conversationId);
+      
+    if (error) {
+      console.error('Error deleting messages:', error);
+      return false;
+    }
+    
+    return true;
   }
 };
 
@@ -360,7 +579,7 @@ export const DoctorRequestService = {
     };
   },
   
-  async getPendingRequests(): Promise<DoctorRequest[]> {
+  async getPendingRequests(): Promise<any[]> {
     // This should only be callable by doctors and admins due to RLS policies
     const { data, error } = await supabase
       .from('doctor_requests')
@@ -369,6 +588,10 @@ export const DoctorRequestService = {
         profiles:user_id (
           full_name,
           avatar_url
+        ),
+        conversation:conversation_id (
+          title,
+          created_at
         )
       `)
       .eq('status', 'pending')
@@ -379,7 +602,7 @@ export const DoctorRequestService = {
       return [];
     }
     
-    return data as any[];
+    return data;
   },
   
   async getUserRequests(userId: string): Promise<DoctorRequest[]> {
@@ -395,6 +618,21 @@ export const DoctorRequestService = {
     }
     
     return data as DoctorRequest[];
+  },
+  
+  async getRequest(requestId: string): Promise<DoctorRequest | null> {
+    const { data, error } = await supabase
+      .from('doctor_requests')
+      .select('*')
+      .eq('id', requestId)
+      .single();
+      
+    if (error) {
+      console.error('Error fetching doctor request:', error);
+      return null;
+    }
+    
+    return data as DoctorRequest;
   },
   
   async updateRequestStatus(
@@ -432,6 +670,32 @@ export const DoctorRequestService = {
     }
     
     return true;
+  },
+  
+  async getAllRequests(): Promise<any[]> {
+    // This should only be callable by admins due to RLS policies
+    const { data, error } = await supabase
+      .from('doctor_requests')
+      .select(`
+        *,
+        profiles:user_id (
+          full_name,
+          avatar_url
+        ),
+        conversation:conversation_id (
+          title,
+          created_at,
+          doctor_id
+        )
+      `)
+      .order('created_at', { ascending: false });
+      
+    if (error) {
+      console.error('Error fetching all doctor requests:', error);
+      return [];
+    }
+    
+    return data;
   }
 };
 
@@ -464,5 +728,151 @@ export const HealthTopicService = {
     }
     
     return data as HealthTopic;
+  },
+  
+  async createHealthTopic(topic: Omit<HealthTopic, 'id' | 'created_at' | 'updated_at'>): Promise<HealthTopic | null> {
+    const { data, error } = await supabase
+      .from('health_topics')
+      .insert([topic])
+      .select()
+      .single();
+      
+    if (error) {
+      console.error('Error creating health topic:', error);
+      return null;
+    }
+    
+    return data as HealthTopic;
+  },
+  
+  async updateHealthTopic(topicId: string, updates: Partial<HealthTopic>): Promise<boolean> {
+    const { error } = await supabase
+      .from('health_topics')
+      .update(updates)
+      .eq('id', topicId);
+      
+    if (error) {
+      console.error('Error updating health topic:', error);
+      return false;
+    }
+    
+    return true;
+  },
+  
+  async deleteHealthTopic(topicId: string): Promise<boolean> {
+    const { error } = await supabase
+      .from('health_topics')
+      .delete()
+      .eq('id', topicId);
+      
+    if (error) {
+      console.error('Error deleting health topic:', error);
+      return false;
+    }
+    
+    return true;
   }
+};
+
+// Set up realtime subscriptions
+export function setupRealtimeSubscriptions(userId: string, callback: (payload: any) => void) {
+  // Get all conversations where the user is involved
+  ConversationService.getUserConversations(userId).then(conversations => {
+    const conversationIds = conversations.map(c => c.id);
+    
+    // Subscribe to changes in these conversations
+    const conversationsSubscription = supabase
+      .channel('public:conversations')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+          filter: `user_id=eq.${userId}`
+        },
+        payload => {
+          callback({
+            type: 'conversation',
+            event: payload.eventType,
+            data: payload.new
+          });
+        }
+      )
+      .subscribe();
+      
+    // Subscribe to messages in these conversations
+    if (conversationIds.length > 0) {
+      const messagesSubscription = supabase
+        .channel('public:messages')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=in.(${conversationIds.join(',')})`
+          },
+          payload => {
+            callback({
+              type: 'message',
+              event: 'INSERT',
+              data: payload.new
+            });
+          }
+        )
+        .subscribe();
+    }
+    
+    // Subscribe to doctor requests
+    const requestsSubscription = supabase
+      .channel('public:doctor_requests')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'doctor_requests',
+          filter: `user_id=eq.${userId}`
+        },
+        payload => {
+          callback({
+            type: 'doctor_request',
+            event: payload.eventType,
+            data: payload.new
+          });
+        }
+      )
+      .subscribe();
+      
+    // For doctors, subscribe to pending requests
+    ProfileService.getProfile(userId).then(profile => {
+      if (profile?.role === 'doctor') {
+        const pendingRequestsSubscription = supabase
+          .channel('public:pending_requests')
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'doctor_requests',
+              filter: 'status=eq.pending'
+            },
+            payload => {
+              callback({
+                type: 'pending_request',
+                event: 'INSERT',
+                data: payload.new
+              });
+            }
+          )
+          .subscribe();
+      }
+    });
+  });
+}
+
+// Remove subscriptions
+export function removeRealtimeSubscriptions() {
+  supabase.removeAllChannels();
 }
