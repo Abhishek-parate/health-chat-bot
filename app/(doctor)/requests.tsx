@@ -1,4 +1,4 @@
-// app/(doctor)/requests.tsx
+// app/(doctor)/requests.tsx - Using direct Supabase query instead of service method
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthProvider';
 import { DoctorRequestService } from '@/lib/supabaseService';
 import { LinearGradient } from 'expo-linear-gradient';
+import { supabase } from '@/utils/supabase';
 
 export default function DoctorRequestsScreen() {
   const router = useRouter();
@@ -30,13 +31,45 @@ export default function DoctorRequestsScreen() {
     if (user) {
       loadRequests();
     }
-  }, [user]);
+  }, [user, filter]); // Added filter as a dependency to refresh when filter changes
   
   const loadRequests = async () => {
     setIsLoading(true);
     try {
-      const data = await DoctorRequestService.getPendingRequests();
-      setRequests(data);
+      console.log(`Loading doctor requests with filter: ${filter}`);
+      
+      // Instead of using the service method that has an error,
+      // directly query the database
+      let query = supabase
+        .from('doctor_requests')
+        .select(`
+          *,
+          profiles:user_id (
+            full_name,
+            avatar_url
+          ),
+          conversation:conversation_id (
+            title,
+            created_at,
+            doctor_id
+          )
+        `)
+        .order('created_at', { ascending: false });
+      
+      // Apply filter on the database side if not 'all'
+      if (filter !== 'all') {
+        query = query.eq('status', filter);
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error('Error fetching doctor requests:', error);
+        return;
+      }
+      
+      console.log(`Retrieved ${data?.length || 0} doctor requests`);
+      setRequests(data || []);
     } catch (error) {
       console.error('Error loading requests:', error);
     } finally {
@@ -56,7 +89,7 @@ export default function DoctorRequestsScreen() {
       
       if (success) {
         Alert.alert('Success', 'Request approved successfully');
-        loadRequests();
+        loadRequests(); // Reload all requests after approval
       }
     } catch (error) {
       console.error('Error accepting request:', error);
@@ -70,11 +103,6 @@ export default function DoctorRequestsScreen() {
     setRefreshing(true);
     loadRequests();
   };
-  
-  const filteredRequests = requests.filter(req => {
-    if (filter === 'all') return true;
-    return req.status === filter;
-  });
   
   const renderRequest = ({ item }) => (
     <View className="bg-white rounded-xl shadow-sm mb-4 overflow-hidden">
@@ -126,7 +154,7 @@ export default function DoctorRequestsScreen() {
           <View className="flex-row justify-end mt-2">
             <TouchableOpacity 
               onPress={() => router.push({
-                pathname: '/(doctor)/request-details',
+                pathname: '/request-details',
                 params: { id: item.id }
               })}
               className="bg-gray-100 px-4 py-2 rounded-xl mr-2"
@@ -143,15 +171,13 @@ export default function DoctorRequestsScreen() {
           </View>
         )}
         
-        {item.status === 'approved' && (
+        {item.status === 'approved' && item.conversation_id && (
           <TouchableOpacity 
             onPress={() => {
-              if (item.conversation_id) {
-                router.push({
-                  pathname: '/(tabs)/chat',
-                  params: { conversationId: item.conversation_id }
-                });
-              }
+              router.push({
+                pathname: '/chat',
+                params: { conversationId: item.conversation_id }
+              });
             }}
             className="bg-indigo-100 px-4 py-2 rounded-xl self-end"
           >
@@ -212,7 +238,7 @@ export default function DoctorRequestsScreen() {
           <ActivityIndicator size="large" color="#10b981" />
           <Text className="mt-4 text-gray-600 font-rubik">Loading requests...</Text>
         </View>
-      ) : filteredRequests.length === 0 ? (
+      ) : requests.length === 0 ? (
         <View className="flex-1 items-center justify-center p-6">
           <Ionicons name="clipboard" size={50} color="#9ca3af" />
           <Text className="text-xl text-gray-800 font-rubik-bold text-center mt-4 mb-2">
@@ -228,7 +254,7 @@ export default function DoctorRequestsScreen() {
         </View>
       ) : (
         <FlatList
-          data={filteredRequests}
+          data={requests}
           renderItem={renderRequest}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: 16 }}

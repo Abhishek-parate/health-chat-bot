@@ -1,37 +1,104 @@
-// app/(tabs)/profile.tsx
+// app/(tabs)/profile.tsx - User/Patient profile
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, Switch, ScrollView, Image } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, Switch, ScrollView, Image, ActivityIndicator, SafeAreaView, StatusBar } from 'react-native';
 import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-// Import useAuth from Supabase implementation
-import { useAuth } from '@/contexts/AuthProvider'; 
+import { useAuth } from '@/contexts/AuthProvider';
+import { 
+  ProfileService, 
+  ConversationService, 
+  MessageService,
+  DoctorRequestService 
+} from '@/lib/supabaseService';
 
-export default function ProfileScreen() {
+export default function PatientProfileScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { user, isAuthenticated, logout } = useAuth();
-  const [darkMode, setDarkMode] = useState(false);
+  
+  const [isLoading, setIsLoading] = useState(true);
+  const [userProfile, setUserProfile] = useState(null);
+  const [metrics, setMetrics] = useState({
+    conversationCount: 0,
+    messageCount: 0,
+    daysActive: 0,
+    doctorConsultations: 0
+  });
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [dataSharingEnabled, setDataSharingEnabled] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [doctorRequests, setDoctorRequests] = useState([]);
   
-  // Get user profile data from Supabase user
-  const getUserProfileData = () => {
-    if (!user) return { fullName: 'User', email: 'user@example.com', imageUrl: null, isAdmin: false };
-    
-    const fullName = user.user_metadata?.full_name || 'User';
-    const email = user.email || 'user@example.com';
-    const imageUrl = user.user_metadata?.avatar_url || null;
-    // You can set custom criteria for admin users
-    const isAdmin = user.email === 'admin@example.com' || user.role === 'admin';
-    
-    return { fullName, email, imageUrl, isAdmin };
+  useEffect(() => {
+    if (user) {
+      loadUserData();
+    }
+  }, [user]);
+  
+  const loadUserData = async () => {
+    setIsLoading(true);
+    try {
+      console.log('Loading user profile data');
+      
+      // Get user profile
+      const profile = await ProfileService.getProfile(user.id);
+      console.log('User profile:', profile);
+      setUserProfile(profile);
+      
+      // Check user role
+      if (profile && profile.role !== 'user') {
+        // Redirect to appropriate profile screen for non-patients
+        if (profile.role === 'doctor') {
+          console.log('Redirecting to doctor profile');
+          router.replace('/(doctor)/profile');
+          return;
+        } else if (profile.role === 'admin') {
+          console.log('Redirecting to admin profile');
+          router.replace('/(admin)/profile');
+          return;
+        }
+      }
+      
+      // Calculate days active
+      const createdAt = new Date(profile?.created_at || user.created_at);
+      const now = new Date();
+      const diffTime = Math.abs(now - createdAt);
+      const daysActive = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      // Fetch user conversations
+      const conversations = await ConversationService.getUserConversations(user.id);
+      console.log(`Retrieved ${conversations.length} user conversations`);
+      
+      // Count messages and doctor consultations
+      let totalMessages = 0;
+      let doctorConsultations = 0;
+      
+      for (const conversation of conversations) {
+        const { count } = await MessageService.getMessageCount(conversation.id);
+        totalMessages += count;
+        
+        if (conversation.is_doctor_chat) {
+          doctorConsultations++;
+        }
+      }
+      
+      // Get doctor requests
+      const requests = await DoctorRequestService.getUserRequests(user.id);
+      setDoctorRequests(requests);
+      
+      // Set metrics
+      setMetrics({
+        conversationCount: conversations.length,
+        messageCount: totalMessages,
+        daysActive: daysActive,
+        doctorConsultations: doctorConsultations
+      });
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
-  
-  const profileData = getUserProfileData();
   
   const handleLogout = async () => {
     Alert.alert(
@@ -44,28 +111,13 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Prevent multiple logout attempts
               if (isLoggingOut) return;
-              
               setIsLoggingOut(true);
               
-              // Direct navigation if user is not signed in
-              if (!isAuthenticated) {
-                console.log('User is already signed out, redirecting to login');
-                router.replace('/(auth)/login');
-                return;
-              }
-              
-              // Logout with Supabase
               await logout();
-              console.log('Successfully signed out');
-              
-              // Redirect to login
               router.replace('/(auth)/login');
             } catch (error) {
-              console.error('An unexpected error occurred during logout:', error);
-              
-              // Still redirect to login if there's any error
+              console.error('Error during logout:', error);
               router.replace('/(auth)/login');
             } finally {
               setIsLoggingOut(false);
@@ -76,29 +128,14 @@ export default function ProfileScreen() {
     );
   };
   
-  // If user is not signed in, redirect to login
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.replace('/(auth)/login');
-    }
-  }, [isAuthenticated, router]);
-  
   const settingsOptions = [
-    {
-      icon: 'moon',
-      title: 'Dark Mode',
-      description: 'Switch to dark theme',
-      type: 'toggle',
-      value: darkMode,
-      onToggle: setDarkMode,
-    },
     {
       icon: 'notifications',
       title: 'Notifications',
       description: 'Get updates and reminders',
       type: 'toggle',
       value: notificationsEnabled,
-      onToggle: setNotificationsEnabled,
+      onToggle: setNotificationsEnabled
     },
     {
       icon: 'analytics',
@@ -106,96 +143,101 @@ export default function ProfileScreen() {
       description: 'Personalized recommendations',
       type: 'toggle',
       value: dataSharingEnabled,
-      onToggle: setDataSharingEnabled,
+      onToggle: setDataSharingEnabled
     },
     {
       icon: 'shield-checkmark',
       title: 'Privacy Policy',
       description: 'How we protect your data',
       type: 'link',
-      onPress: () => router.push('/privacy-policy'),
+      onPress: () => router.push('/privacy-policy')
     },
     {
       icon: 'document-text',
       title: 'Terms of Service',
       description: 'User agreement',
       type: 'link',
-      onPress: () => router.push('/terms'),
+      onPress: () => router.push('/terms')
     },
     {
       icon: 'help-circle',
       title: 'Help & Support',
       description: 'Get assistance',
       type: 'link',
-      onPress: () => router.push('/support'),
+      onPress: () => router.push('/support')
     },
     {
       icon: 'information-circle',
       title: 'About',
-      description: 'App information and version',
+      description: 'App version 1.0.0',
       type: 'link',
-      onPress: () => router.push('/about'),
+      onPress: () => router.push('/about')
     },
   ];
-
-  // Render loading state if no user data yet
-  if (!user) {
+  
+  if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center">
-        <Text className="font-rubik">Loading profile...</Text>
-      </View>
+      <SafeAreaView className="flex-1 items-center justify-center bg-gray-50">
+        <StatusBar barStyle="dark-content" />
+        <ActivityIndicator size="large" color="#3b82f6" />
+        <Text className="mt-4 text-gray-600 font-rubik">Loading profile...</Text>
+      </SafeAreaView>
     );
   }
 
   return (
-    <>
-      <StatusBar style="light" />
+    <SafeAreaView className="flex-1 bg-gray-50">
+      <StatusBar barStyle="light" />
       
       {/* Header */}
       <LinearGradient
-        colors={['#4f46e5', '#7c3aed']}
+        colors={['#3b82f6', '#2563eb']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        className="pt-12 pb-6 px-5 rounded-b-3xl shadow-lg"
+        className="pt-6 pb-6 px-5 rounded-b-3xl shadow-lg"
       >
         <View className="flex-row justify-between items-center mb-4">
-          <Text className="text-2xl font-rubik-bold text-white">Profile</Text>
-          <TouchableOpacity 
-            onPress={() => Alert.alert('Settings', 'Additional profile settings would appear here')}
-            className="bg-white/20 p-2 rounded-full"
-          >
-            <Ionicons name="settings-outline" size={22} color="white" />
-          </TouchableOpacity>
+          <Text className="text-2xl font-rubik-bold text-white">My Profile</Text>
         </View>
         
         {/* User Profile Summary */}
         <View className="flex-row items-center bg-white/10 rounded-xl p-4 backdrop-blur-lg">
           <View className="bg-white w-16 h-16 rounded-full items-center justify-center">
-            {profileData.imageUrl ? (
+            {userProfile?.avatar_url ? (
               <Image 
-                source={{ uri: profileData.imageUrl }} 
+                source={{ uri: userProfile.avatar_url }} 
                 className="w-16 h-16 rounded-full" 
               />
             ) : (
-              <Text className="text-2xl font-rubik-bold text-indigo-600">
-                {profileData.fullName.charAt(0) || profileData.email.charAt(0) || 'U'}
+              <Text className="text-2xl font-rubik-bold text-blue-600">
+                {userProfile?.full_name?.charAt(0) || user?.email?.charAt(0) || 'U'}
               </Text>
             )}
           </View>
           
           <View className="ml-4 flex-1">
-            <Text className="text-xl font-rubik-bold text-white">{profileData.fullName}</Text>
-            <Text className="text-white/80 font-rubik">{profileData.email}</Text>
+            <Text className="text-xl font-rubik-bold text-white">
+              {userProfile?.full_name || 'User'}
+            </Text>
+            <Text className="text-white/80 font-rubik">{user?.email}</Text>
             
-            {profileData.isAdmin && (
-              <View className="bg-white/20 px-3 py-1 rounded-full mt-1 self-start">
-                <Text className="text-white text-xs font-rubik-medium">Admin</Text>
+            {/* Phone verification status */}
+            {userProfile?.phone_number && (
+              <View className="flex-row items-center mt-1">
+                <Ionicons 
+                  name={userProfile.phone_verified ? "checkmark-circle" : "alert-circle"} 
+                  size={14} 
+                  color={userProfile.phone_verified ? "#d1fae5" : "#fef3c7"} 
+                />
+                <Text className="text-white/90 font-rubik text-xs ml-1">
+                  {userProfile.phone_verified ? "Phone verified" : "Phone not verified"}
+                </Text>
               </View>
             )}
           </View>
           
           <TouchableOpacity 
-            onPress={() => Alert.alert('Edit Profile', 'This feature would allow editing profile details.')}
+            onPress={() => router.push('/edit-profile')}
             className="bg-white/20 p-2 rounded-full"
           >
             <Ionicons name="pencil" size={18} color="white" />
@@ -204,13 +246,13 @@ export default function ProfileScreen() {
       </LinearGradient>
       
       <ScrollView className="flex-1 px-5 pt-6">
-        {/* Stats Overview */}
+        {/* Metrics Overview */}
         <View className="flex-row justify-between mb-6">
           <View className="bg-white rounded-xl p-4 shadow-sm items-center w-[31%]">
-            <View className="w-10 h-10 rounded-full bg-indigo-100 items-center justify-center mb-2">
-              <Ionicons name="calendar" size={20} color="#4f46e5" />
+            <View className="w-10 h-10 rounded-full bg-blue-100 items-center justify-center mb-2">
+              <Ionicons name="calendar" size={20} color="#3b82f6" />
             </View>
-            <Text className="text-xl font-rubik-bold text-gray-800">28</Text>
+            <Text className="text-xl font-rubik-bold text-gray-800">{metrics.daysActive}</Text>
             <Text className="text-gray-500 text-xs font-rubik">Days Active</Text>
           </View>
           
@@ -218,80 +260,96 @@ export default function ProfileScreen() {
             <View className="w-10 h-10 rounded-full bg-emerald-100 items-center justify-center mb-2">
               <Ionicons name="chatbubbles" size={20} color="#10b981" />
             </View>
-            <Text className="text-xl font-rubik-bold text-gray-800">13</Text>
-            <Text className="text-gray-500 text-xs font-rubik">Conversations</Text>
+            <Text className="text-xl font-rubik-bold text-gray-800">{metrics.conversationCount}</Text>
+            <Text className="text-gray-500 text-xs font-rubik">Chats</Text>
           </View>
           
           <View className="bg-white rounded-xl p-4 shadow-sm items-center w-[31%]">
             <View className="w-10 h-10 rounded-full bg-amber-100 items-center justify-center mb-2">
-              <Ionicons name="star" size={20} color="#f59e0b" />
+              <Ionicons name="medkit" size={20} color="#f59e0b" />
             </View>
-            <Text className="text-xl font-rubik-bold text-gray-800">4.9</Text>
-            <Text className="text-gray-500 text-xs font-rubik">Rating</Text>
+            <Text className="text-xl font-rubik-bold text-gray-800">{metrics.doctorConsultations}</Text>
+            <Text className="text-gray-500 text-xs font-rubik">Consultations</Text>
           </View>
         </View>
         
-        {/* Admin Panel (for admin users only) */}
-        {profileData.isAdmin && (
-          <View className="bg-white rounded-xl p-5 shadow-sm mb-6">
-            <View className="flex-row items-center mb-4">
-              <View className="bg-indigo-100 p-3 rounded-full mr-3">
-                <Ionicons name="shield" size={20} color="#4f46e5" />
-              </View>
-              <Text className="text-lg font-rubik-bold text-gray-800">Admin Tools</Text>
+        {/* Doctor Request Status */}
+        {doctorRequests.length > 0 && doctorRequests.some(r => r.status === 'pending') && (
+          <View className="bg-amber-50 p-4 rounded-xl mb-6">
+            <View className="flex-row items-center mb-2">
+              <Ionicons name="hourglass" size={22} color="#f59e0b" />
+              <Text className="text-amber-800 font-rubik-medium ml-2">Doctor Request Pending</Text>
             </View>
-            
-            <View className="flex-row justify-between mb-3">
-              <TouchableOpacity
-                onPress={() => router.push('/admin/users')}
-                className="bg-white border border-indigo-200 rounded-xl py-3 px-4 w-[48%] shadow-sm"
-              >
-                <Ionicons name="people" size={22} color="#4f46e5" />
-                <Text className="text-indigo-700 font-rubik-medium mt-1">Manage Users</Text>
-                <Text className="text-gray-500 text-xs mt-1 font-rubik">24 active users</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                onPress={() => Alert.alert('Health Content', 'Admin would manage health content here.')}
-                className="bg-white border border-indigo-200 rounded-xl py-3 px-4 w-[48%] shadow-sm"
-              >
-                <Ionicons name="document-text" size={22} color="#4f46e5" />
-                <Text className="text-indigo-700 font-rubik-medium mt-1">Content</Text>
-                <Text className="text-gray-500 text-xs mt-1 font-rubik">48 topics</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <TouchableOpacity
-              onPress={() => Alert.alert('Analytics', 'View app analytics and metrics.')}
-              className="bg-indigo-600 rounded-xl py-3 px-4 shadow-sm"
+            <Text className="text-amber-700 font-rubik text-sm">
+              Your request to speak with a doctor is being processed. A healthcare professional will be assigned to you shortly.
+            </Text>
+            <TouchableOpacity 
+              onPress={() => router.push({
+                pathname: '/doctor-request',
+                params: { id: doctorRequests.find(r => r.status === 'pending').id }
+              })}
+              className="bg-amber-100 py-2 rounded-lg items-center mt-3"
             >
-              <View className="flex-row items-center justify-between">
-                <View>
-                  <Text className="text-white font-rubik-medium">View Analytics</Text>
-                  <Text className="text-white/70 text-xs mt-1 font-rubik">User activity, engagement, and more</Text>
-                </View>
-                <Ionicons name="arrow-forward" size={18} color="white" />
-              </View>
+              <Text className="text-amber-800 font-rubik-medium">View Request Status</Text>
             </TouchableOpacity>
           </View>
         )}
+        
+        {/* Quick actions */}
+        <View className="bg-white rounded-xl p-5 shadow-sm mb-6">
+          <Text className="text-lg font-rubik-bold text-gray-800 mb-4">Quick Actions</Text>
+          
+          <View className="flex-row flex-wrap justify-between">
+            <TouchableOpacity 
+              onPress={() => router.push('/chat')}
+              className="bg-blue-50 rounded-xl p-3 w-[48%] mb-4"
+            >
+              <Ionicons name="chatbubbles-outline" size={24} color="#3b82f6" />
+              <Text className="text-blue-700 font-rubik-medium mt-1">New Chat</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              onPress={() => router.push('/conversations')}
+              className="bg-blue-50 rounded-xl p-3 w-[48%] mb-4"
+            >
+              <Ionicons name="list-outline" size={24} color="#3b82f6" />
+              <Text className="text-blue-700 font-rubik-medium mt-1">My Conversations</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              onPress={() => router.push('/request-doctor')}
+              className="bg-blue-50 rounded-xl p-3 w-[48%] mb-4"
+            >
+              <Ionicons name="medkit-outline" size={24} color="#3b82f6" />
+              <Text className="text-blue-700 font-rubik-medium mt-1">Request Doctor</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              onPress={() => router.push('/health-topics')}
+              className="bg-blue-50 rounded-xl p-3 w-[48%] mb-4"
+            >
+              <Ionicons name="information-circle-outline" size={24} color="#3b82f6" />
+              <Text className="text-blue-700 font-rubik-medium mt-1">Health Topics</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
         
         {/* Settings Categories */}
         <View className="mb-6">
           <Text className="text-lg font-rubik-bold text-gray-800 mb-4 px-1">Settings</Text>
           
-          <View className="bg-white rounded-xl shadow-sm overflow-hidden mb-4">
-            {settingsOptions.slice(0, 3).map((item, index) => (
+          <View className="bg-white rounded-xl shadow-sm overflow-hidden">
+            {settingsOptions.map((item, index) => (
               <TouchableOpacity
                 key={index}
                 onPress={item.type === 'link' ? item.onPress : undefined}
                 className={`flex-row items-center justify-between p-4 ${
-                  index < settingsOptions.slice(0, 3).length - 1 ? 'border-b border-gray-100' : ''
+                  index < settingsOptions.length - 1 ? 'border-b border-gray-100' : ''
                 }`}
               >
                 <View className="flex-row items-center">
-                  <View className="w-10 h-10 rounded-full bg-indigo-100 items-center justify-center mr-3">
-                    <Ionicons name={item.icon} size={18} color="#4f46e5" />
+                  <View className="w-10 h-10 rounded-full bg-blue-100 items-center justify-center mr-3">
+                    <Ionicons name={item.icon} size={18} color="#3b82f6" />
                   </View>
                   <View>
                     <Text className="text-gray-800 font-rubik-medium">{item.title}</Text>
@@ -303,37 +361,12 @@ export default function ProfileScreen() {
                   <Switch
                     value={item.value}
                     onValueChange={item.onToggle}
-                    trackColor={{ false: '#e2e8f0', true: '#c7d2fe' }}
-                    thumbColor={item.value ? '#4f46e5' : '#f1f5f9'}
+                    trackColor={{ false: '#e2e8f0', true: '#dbeafe' }}
+                    thumbColor={item.value ? '#3b82f6' : '#f1f5f9'}
                   />
                 ) : (
                   <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
                 )}
-              </TouchableOpacity>
-            ))}
-          </View>
-          
-          {/* Legal & Support */}
-          <View className="bg-white rounded-xl shadow-sm overflow-hidden">
-            {settingsOptions.slice(3).map((item, index) => (
-              <TouchableOpacity
-                key={index}
-                onPress={item.onPress}
-                className={`flex-row items-center justify-between p-4 ${
-                  index < settingsOptions.slice(3).length - 1 ? 'border-b border-gray-100' : ''
-                }`}
-              >
-                <View className="flex-row items-center">
-                  <View className="w-10 h-10 rounded-full bg-gray-100 items-center justify-center mr-3">
-                    <Ionicons name={item.icon} size={18} color="#6b7280" />
-                  </View>
-                  <View>
-                    <Text className="text-gray-800 font-rubik-medium">{item.title}</Text>
-                    <Text className="text-gray-500 text-xs mt-0.5 font-rubik">{item.description}</Text>
-                  </View>
-                </View>
-                
-                <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
               </TouchableOpacity>
             ))}
           </View>
@@ -353,6 +386,6 @@ export default function ProfileScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
-    </>
+    </SafeAreaView>
   );
 }

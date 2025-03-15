@@ -1,4 +1,4 @@
-// app/(doctor)/patient-details.tsx
+// app/(doctor)/patient-details.tsx - with fixed navigation and debugging
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -15,36 +15,66 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthProvider';
 import { ProfileService, ConversationService } from '@/lib/supabaseService';
 import { LinearGradient } from 'expo-linear-gradient';
+import { supabase } from '@/utils/supabase'; // Import supabase client for direct queries if needed
 
 export default function PatientDetailsScreen() {
-  const { id } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const id = params.id as string;
   const router = useRouter();
   const { user } = useAuth();
   
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [patient, setPatient] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'consultations'
   
   useEffect(() => {
-    if (id && user) {
+    if (user) {
+      console.log('PatientDetails mounted, params:', params);
+      console.log('Patient ID:', id);
       loadPatientData();
     }
-  }, [id, user]);
+  }, [user, id]);
   
   const loadPatientData = async () => {
     setIsLoading(true);
+    setLoadError(null);
+    
     try {
+      console.log(`Loading patient data for ID: ${id}`);
+      
+      if (!id) {
+        console.error('No patient ID provided');
+        setLoadError('No patient ID provided');
+        setIsLoading(false);
+        return;
+      }
+      
       // Fetch patient profile
       const profile = await ProfileService.getProfile(id);
+      console.log('Patient profile result:', profile);
+      
+      if (!profile) {
+        console.error(`No profile found for ID: ${id}`);
+        setLoadError('Patient profile not found');
+        setIsLoading(false);
+        return;
+      }
+      
       setPatient(profile);
       
       // Fetch conversations with this patient
       const doctorConversations = await ConversationService.getDoctorConversations(user.id);
+      console.log(`Retrieved ${doctorConversations.length} doctor conversations`);
+      
       const patientConversations = doctorConversations.filter(c => c.user_id === id);
+      console.log(`Filtered to ${patientConversations.length} conversations with this patient`);
+      
       setConversations(patientConversations);
     } catch (error) {
       console.error('Error loading patient data:', error);
+      setLoadError(error.message || 'Failed to load patient data');
     } finally {
       setIsLoading(false);
     }
@@ -52,19 +82,38 @@ export default function PatientDetailsScreen() {
   
   const startNewConsultation = async () => {
     try {
+      console.log(`Starting new consultation with patient: ${id}`);
+      
       // Create a new conversation with this patient
       const conversation = await ConversationService.createConversation(id, 'New Consultation');
       
+      if (!conversation) {
+        console.error('Failed to create conversation');
+        Alert.alert('Error', 'Failed to create consultation');
+        return;
+      }
+      
+      console.log('New conversation created:', conversation);
+      
       // Assign the current doctor
-      await ConversationService.assignDoctorToConversation(conversation.id, user.id);
+      const success = await ConversationService.assignDoctorToConversation(conversation.id, user.id);
+      
+      if (!success) {
+        console.error('Failed to assign doctor to conversation');
+        Alert.alert('Error', 'Failed to assign doctor to consultation');
+        return;
+      }
+      
+      console.log(`Doctor ${user.id} assigned to conversation ${conversation.id}`);
       
       // Navigate to the chat screen
       router.push({
-        pathname: '/(tabs)/chat',
+        pathname: '/chat',
         params: { conversationId: conversation.id }
       });
     } catch (error) {
       console.error('Error starting new consultation:', error);
+      Alert.alert('Error', 'Failed to start new consultation');
     }
   };
   
@@ -75,7 +124,7 @@ export default function PatientDetailsScreen() {
     return (
       <TouchableOpacity
         onPress={() => router.push({
-          pathname: '/(tabs)/chat',
+          pathname: '/chat',
           params: { conversationId: item.id }
         })}
         className="bg-white rounded-xl shadow-sm mb-4 p-4"
@@ -124,7 +173,7 @@ export default function PatientDetailsScreen() {
         <View className="flex-row justify-end mt-3">
           <TouchableOpacity
             onPress={() => router.push({
-              pathname: '/(tabs)/chat',
+              pathname: '/chat',
               params: { conversationId: item.id }
             })}
             className="bg-indigo-100 px-4 py-2 rounded-xl"
@@ -233,7 +282,7 @@ export default function PatientDetailsScreen() {
           
           <TouchableOpacity
             onPress={() => router.push({
-              pathname: '/(tabs)/chat',
+              pathname: '/chat',
               params: { conversationId: conversations[0].id }
             })}
             className="bg-indigo-100 py-2 rounded-xl items-center"
@@ -261,18 +310,23 @@ export default function PatientDetailsScreen() {
     );
   }
   
-  if (!patient) {
+  if (loadError || !patient) {
     return (
       <View className="flex-1 justify-center items-center p-6">
         <Ionicons name="alert-circle" size={50} color="#ef4444" />
         <Text className="text-xl text-gray-800 font-rubik-bold text-center mt-4 mb-2">
           Patient Not Found
         </Text>
-        <Text className="text-gray-500 text-center font-rubik mb-6">
+        <Text className="text-gray-500 text-center font-rubik mb-2">
           The patient profile you're looking for couldn't be found.
         </Text>
+        {loadError && (
+          <Text className="text-red-500 text-center font-rubik mb-6">
+            Error: {loadError}
+          </Text>
+        )}
         <TouchableOpacity
-          onPress={() => router.push('/(doctor)/patients')}
+          onPress={() => router.push('/patients')}
           className="bg-indigo-600 px-6 py-3 rounded-xl"
         >
           <Text className="text-white font-rubik-medium">Back to Patients</Text>

@@ -185,6 +185,17 @@ export default function DoctorConversationsScreen() {
         end={{ x: 1, y: 1 }}
         className="pt-12 pb-6 px-5"
       >
+
+<View className="flex-row justify-end px-5 py-2">
+  <TouchableOpacity
+    onPress={() => router.push('/users')}
+    className="bg-emerald-100 rounded-full px-4 py-2 flex-row items-center"
+  >
+    <Ionicons name="add-circle-outline" size={20} color="#059669" />
+    <Text className="text-emerald-700 font-rubik-medium ml-1">New Chat</Text>
+  </TouchableOpacity>
+</View>
+
         <View className="flex-row items-center mb-4">
           <TouchableOpacity
             onPress={() => router.back()}

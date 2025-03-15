@@ -106,9 +106,23 @@ export default function DoctorDashboard() {
     });
   };
 
-  const handleAcceptRequest = async (requestId) => {
+// Improved handleAcceptRequest function for dashboard.tsx
+// Fixed handleAcceptRequest function for dashboard.tsx
+// This version doesn't directly use supabase client
+const handleAcceptRequest = async (requestId) => {
     setIsLoading(true);
     try {
+      // Use DoctorRequestService to get the request first
+      const request = await DoctorRequestService.getRequest(requestId);
+      
+      // Check if request exists and is still pending
+      if (!request || request.status !== 'pending') {
+        alert('This request is no longer available. It may have been processed by another doctor.');
+        // Refresh to get latest data
+        loadDoctorData();
+        return;
+      }
+      
       // Update request status to approved
       const success = await DoctorRequestService.updateRequestStatus(
         requestId, 
@@ -117,11 +131,16 @@ export default function DoctorDashboard() {
       );
       
       if (success) {
+        // Show success message
+        alert('Request accepted successfully. You can now chat with the patient.');
         // Refresh data
         loadDoctorData();
+      } else {
+        alert('Failed to accept request. Please try again.');
       }
     } catch (error) {
       console.error('Error accepting request:', error);
+      alert('An error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -155,7 +174,7 @@ export default function DoctorDashboard() {
         <View className="flex-row justify-between items-center">
           <Text className="text-2xl font-rubik-bold text-white">Doctor Dashboard</Text>
           <TouchableOpacity
-            onPress={() => router.push('/(tabs)/profile')}
+            onPress={() => router.push('/profile')}
             className="bg-white/20 p-2 rounded-full"
           >
             <Ionicons name="person" size={22} color="white" />
@@ -239,82 +258,92 @@ export default function DoctorDashboard() {
         
         {/* Pending Doctor Requests */}
         <View className="mb-6">
-          <View className="flex-row justify-between items-center mb-4">
-            <Text className="text-lg font-rubik-bold text-gray-800">Consultation Requests</Text>
-            <TouchableOpacity onPress={() => router.push('/(doctor)/requests')}>
-              <Text className="text-emerald-600 font-rubik-medium">See All</Text>
-            </TouchableOpacity>
-          </View>
-          
-          {pendingRequests.length === 0 ? (
-            <View className="bg-white rounded-xl p-6 shadow-sm items-center">
-              <Ionicons name="checkmark-circle" size={40} color="#10b981" />
-              <Text className="text-gray-800 mt-2 font-rubik-medium">No pending requests</Text>
-              <Text className="text-gray-500 text-center mt-1 font-rubik">
-                You have no active consultation requests at the moment
+  <View className="flex-row justify-between items-center mb-4">
+    <Text className="text-lg font-rubik-bold text-gray-800">Consultation Requests</Text>
+    <TouchableOpacity onPress={() => router.push('/(doctor)/requests')}>
+      <Text className="text-emerald-600 font-rubik-medium">See All</Text>
+    </TouchableOpacity>
+  </View>
+  
+  {isLoading ? (
+    <View className="bg-white rounded-xl p-6 shadow-sm items-center">
+      <ActivityIndicator size="small" color="#10b981" />
+      <Text className="text-gray-600 mt-2 font-rubik">Loading requests...</Text>
+    </View>
+  ) : pendingRequests.length === 0 ? (
+    <View className="bg-white rounded-xl p-6 shadow-sm items-center">
+      <Ionicons name="checkmark-circle" size={40} color="#10b981" />
+      <Text className="text-gray-800 mt-2 font-rubik-medium">No pending requests</Text>
+      <Text className="text-gray-500 text-center mt-1 font-rubik">
+        You have no active consultation requests at the moment
+      </Text>
+    </View>
+  ) : (
+    <View className="bg-white rounded-xl shadow-sm overflow-hidden">
+      {pendingRequests.map((request, index) => (
+        <View 
+          key={request.id}
+          className={`p-4 ${
+            index < pendingRequests.length - 1 ? 'border-b border-gray-100' : ''
+          }`}
+        >
+          <View className="flex-row items-center mb-2">
+            <View className="h-10 w-10 rounded-full bg-amber-100 items-center justify-center mr-3">
+              {request.profiles?.avatar_url ? (
+                <Image 
+                  source={{ uri: request.profiles.avatar_url }} 
+                  className="h-10 w-10 rounded-full" 
+                />
+              ) : (
+                <Text className="text-amber-600 font-rubik-bold">
+                  {request.profiles?.full_name?.charAt(0) || 'U'}
+                </Text>
+              )}
+            </View>
+            <View className="flex-1">
+              <Text className="text-gray-800 font-rubik-medium">
+                {request.profiles?.full_name || 'Patient'}
+              </Text>
+              <Text className="text-gray-500 text-xs font-rubik">
+                {new Date(request.created_at).toLocaleString()}
               </Text>
             </View>
-          ) : (
-            <View className="bg-white rounded-xl shadow-sm overflow-hidden">
-              {pendingRequests.map((request, index) => (
-                <View 
-                  key={request.id}
-                  className={`p-4 ${
-                    index < pendingRequests.length - 1 ? 'border-b border-gray-100' : ''
-                  }`}
-                >
-                  <View className="flex-row items-center mb-2">
-                    <View className="h-10 w-10 rounded-full bg-amber-100 items-center justify-center mr-3">
-                      {request.profiles?.avatar_url ? (
-                        <Image 
-                          source={{ uri: request.profiles.avatar_url }} 
-                          className="h-10 w-10 rounded-full" 
-                        />
-                      ) : (
-                        <Text className="text-amber-600 font-rubik-bold">
-                          {request.profiles?.full_name?.charAt(0) || 'U'}
-                        </Text>
-                      )}
-                    </View>
-                    <View className="flex-1">
-                      <Text className="text-gray-800 font-rubik-medium">
-                        {request.profiles?.full_name || 'Patient'}
-                      </Text>
-                      <Text className="text-gray-500 text-xs font-rubik">
-                        {new Date(request.created_at).toLocaleString()}
-                      </Text>
-                    </View>
-                    <View className="bg-amber-100 rounded-full px-2 py-0.5">
-                      <Text className="text-amber-800 text-xs font-rubik-medium">Pending</Text>
-                    </View>
-                  </View>
-                  
-                  <Text className="text-gray-600 font-rubik mb-3" numberOfLines={2}>
-                    {request.reason || 'No reason provided'}
-                  </Text>
-                  
-                  <View className="flex-row justify-end">
-                    <TouchableOpacity 
-                      onPress={() => router.push({
-                        pathname: '/(doctor)/request-details',
-                        params: { id: request.id }
-                      })}
-                      className="bg-gray-100 px-4 py-2 rounded-xl mr-2"
-                    >
-                      <Text className="text-gray-600 font-rubik-medium text-sm">View</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      onPress={() => handleAcceptRequest(request.id)}
-                      className="bg-emerald-100 px-4 py-2 rounded-xl"
-                    >
-                      <Text className="text-emerald-700 font-rubik-medium text-sm">Accept</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
+            <View className="bg-amber-100 rounded-full px-2 py-0.5">
+              <Text className="text-amber-800 text-xs font-rubik-medium">Pending</Text>
             </View>
-          )}
+          </View>
+          
+          <Text className="text-gray-600 font-rubik mb-3" numberOfLines={2}>
+            {request.reason || 'No reason provided'}
+          </Text>
+          
+          <View className="flex-row justify-end">
+            <TouchableOpacity 
+              onPress={() => router.push({
+                pathname: '/(doctor)/request-details',
+                params: { id: request.id }
+              })}
+              className="bg-gray-100 px-4 py-2 rounded-xl mr-2"
+            >
+              <Text className="text-gray-600 font-rubik-medium text-sm">View</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              disabled={isLoading}
+              onPress={() => handleAcceptRequest(request.id)}
+              className={`${isLoading ? 'bg-gray-200' : 'bg-emerald-100'} px-4 py-2 rounded-xl`}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#10b981" />
+              ) : (
+                <Text className="text-emerald-700 font-rubik-medium text-sm">Accept</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
+      ))}
+    </View>
+  )}
+</View>
         
         {/* Active Conversations */}
         <View className="mb-6">

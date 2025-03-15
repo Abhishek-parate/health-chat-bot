@@ -87,149 +87,75 @@ export async function createUserProfile(userId: string, userData: Partial<Profil
     }
 }
 
+
+
 // User Profile Service
 export const ProfileService = {
     async getProfile(userId: string): Promise<Profile | null> {
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', userId)
-            .single();
-
-        if (error) {
-            console.error('Error fetching profile:', error);
-            return null;
+      try {
+        console.log(`Fetching profile for user ID: ${userId}`);
+        
+        if (!userId) {
+          console.error('Error: No userId provided to getProfile');
+          return null;
         }
-
+        
+        // Query the profiles table
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle(); // Use maybeSingle instead of single to avoid errors when no rows returned
+        
+        if (error) {
+          console.error('Error fetching profile:', error);
+          return null;
+        }
+        
+        if (!data) {
+          console.log(`No profile found for user ID: ${userId}`);
+          return null;
+        }
+        
+        console.log('Profile retrieved successfully');
         return data as Profile;
+      } catch (error) {
+        console.error('Exception in getProfile:', error);
+        return null;
+      }
     },
 
-    async updateProfile(userId: string, profileData: Partial<Profile>): Promise<boolean> {
-        const { error } = await supabase
-            .from('profiles')
-            .update(profileData)
-            .eq('id', userId);
-
-        if (error) {
-            console.error('Error updating profile:', error);
-            return false;
-        }
-
-        return true;
-    },
-
-    async updateUserStatus(userId: string, status: 'online' | 'offline' | 'busy'): Promise<boolean> {
-        const { error } = await supabase
-            .from('profiles')
-            .update({ status, updated_at: new Date().toISOString() })
-            .eq('id', userId);
-
-        if (error) {
-            console.error('Error updating user status:', error);
-            return false;
-        }
-
-        return true;
-    },
-
-    async getDoctors(): Promise<Profile[]> {
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('role', 'doctor');
-
-        if (error) {
-            console.error('Error fetching doctors:', error);
-            return [];
-        }
-
-        return data as Profile[];
-    },
 
     async getAvailableDoctors(): Promise<Profile[]> {
-        const { data, error } = await supabase
+        try {
+          console.log('Fetching available doctors');
+          
+          // Get doctors who are online or busy, but not offline
+          const { data, error } = await supabase
             .from('profiles')
             .select('*')
             .eq('role', 'doctor')
             .neq('status', 'offline');
-
-        if (error) {
+      
+          if (error) {
             console.error('Error fetching available doctors:', error);
             return [];
-        }
-
-        return data as Profile[];
-    },
-
-    async getAllUsers(): Promise<Profile[]> {
-        // This should only be callable by admins due to RLS policies
-        try {
-            const { data, error } = await supabase
-                .from('profiles')
-                .select('*')
-                .order('created_at', { ascending: false });
-
-            if (error) {
-                console.error('Error fetching all users:', error);
-                return [];
-            }
-
-            return data as Profile[];
+          }
+      
+          console.log(`Retrieved ${data?.length || 0} available doctors`);
+          return data as Profile[] || [];
         } catch (error) {
-            console.error('Error in getAllUsers:', error);
-            return [];
+          console.error('Exception in getAvailableDoctors:', error);
+          return [];
         }
-    },
+      }
+}
 
-    async getUsersByRole(role: 'user' | 'doctor' | 'admin'): Promise<Profile[]> {
-        // This should only be callable by admins due to RLS policies
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('role', role)
-            .order('created_at', { ascending: false });
 
-        if (error) {
-            console.error(`Error fetching ${role}s:`, error);
-            return [];
-        }
 
-        return data as Profile[];
-    },
 
-    async updateUserRole(userId: string, role: 'user' | 'doctor' | 'admin'): Promise<boolean> {
-        // This should only be callable by admins due to RLS policies
-        const { error } = await supabase
-            .from('profiles')
-            .update({ role, updated_at: new Date().toISOString() })
-            .eq('id', userId);
 
-        if (error) {
-            console.error('Error updating user role:', error);
-            return false;
-        }
-
-        return true;
-    },
-
-    async verifyPhone(userId: string): Promise<boolean> {
-        const { error } = await supabase
-            .from('profiles')
-            .update({
-                phone_verified: true,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', userId);
-
-        if (error) {
-            console.error('Error verifying phone:', error);
-            return false;
-        }
-
-        return true;
-    }
-};
-
+  
 // Conversation Service
 export const ConversationService = {
     async createConversation(userId: string, title?: string): Promise<Conversation | null> {
@@ -584,31 +510,41 @@ export const DoctorRequestService = {
         };
     },
 
-    async getPendingRequests(): Promise<any[]> {
-        // This should only be callable by doctors and admins due to RLS policies
+    // Fix for DoctorRequestService getAllRequests method
+async getAllRequests(): Promise<any[]> { // Removed the stray 'f' character
+    try {
+        console.log('Fetching all doctor requests');
+        // This should only be callable by admins and doctors due to RLS policies
         const { data, error } = await supabase
             .from('doctor_requests')
             .select(`
-        *,
-        profiles:user_id (
-          full_name,
-          avatar_url
-        ),
-        conversation:conversation_id (
-          title,
-          created_at
-        )
-      `)
-            .eq('status', 'pending')
-            .order('created_at', { ascending: true });
+                *,
+                profiles:user_id (
+                    full_name,
+                    avatar_url
+                ),
+                conversation:conversation_id (
+                    title,
+                    created_at,
+                    doctor_id
+                )
+            `)
+            .order('created_at', { ascending: false });
 
         if (error) {
-            console.error('Error fetching pending doctor requests:', error);
+            console.error('Error fetching all doctor requests:', error);
             return [];
         }
 
-        return data;
-    },
+        console.log(`Retrieved ${data?.length || 0} doctor requests`);
+        return data || [];
+    } catch (error) {
+        console.error('Exception in getAllRequests:', error);
+        return [];
+    }
+},
+
+
 
     async getUserRequests(userId: string): Promise<DoctorRequest[]> {
         const { data, error } = await supabase
@@ -626,58 +562,147 @@ export const DoctorRequestService = {
     },
 
     async getRequest(requestId: string): Promise<DoctorRequest | null> {
-        const { data, error } = await supabase
+        try {
+          console.log(`Fetching request with ID: ${requestId}`);
+          const { data, error } = await supabase
             .from('doctor_requests')
             .select('*')
             .eq('id', requestId)
             .single();
-
-        if (error) {
+    
+          if (error) {
             console.error('Error fetching doctor request:', error);
             return null;
+          }
+    
+          console.log('Retrieved request:', data);
+          return data as DoctorRequest;
+        } catch (error) {
+          console.error('Exception in getRequest:', error);
+          return null;
         }
+      },
 
-        return data as DoctorRequest;
-    },
 
-    async updateRequestStatus(
+    async getPendingRequests(): Promise<any[]> {
+        try {
+          // This should only be callable by doctors and admins due to RLS policies
+          const { data, error } = await supabase
+            .from('doctor_requests')
+            .select(`
+              *,
+              profiles:user_id (
+                full_name,
+                avatar_url
+              ),
+              conversation:conversation_id (
+                title,
+                created_at
+              )
+            `)
+            .eq('status', 'pending')
+            .order('created_at', { ascending: true });
+    
+          if (error) {
+            console.error('Error fetching pending doctor requests:', error);
+            return [];
+          }
+    
+          return data || [];
+        } catch (error) {
+          console.error('Exception in getPendingRequests:', error);
+          return [];
+        }
+      },
+    
+      async updateRequestStatus(
         requestId: string,
         status: 'approved' | 'rejected' | 'cancelled',
         doctorId?: string
-    ): Promise<boolean> {
-        // Update the request status
-        const { data, error } = await supabase
+      ): Promise<boolean> {
+        try {
+          console.log(`Starting updateRequestStatus for request ${requestId} with status ${status}`);
+          
+          // First get the request to check if it exists and is still pending
+          const { data: requestData, error: fetchError } = await supabase
+            .from('doctor_requests')
+            .select('*')
+            .eq('id', requestId)
+            .single();
+    
+          if (fetchError || !requestData) {
+            console.error('Error fetching doctor request:', fetchError);
+            return false;
+          }
+    
+          console.log('Current request data:', requestData);
+    
+          // Check if request is already processed
+          if (requestData.status !== 'pending') {
+            console.error(`Request ${requestId} already processed with status: ${requestData.status}`);
+            return false;
+          }
+    
+          // Now update the request status
+          console.log(`Updating request ${requestId} status to ${status}`);
+          const { data: updateData, error: updateError } = await supabase
             .from('doctor_requests')
             .update({
-                status,
-                updated_at: new Date().toISOString()
+              status,
+              updated_at: new Date().toISOString()
             })
             .eq('id', requestId)
-            .select()
-            .single();
-
-        if (error || !data) {
-            console.error('Error updating doctor request status:', error);
+            .select();
+    
+          if (updateError) {
+            console.error('Error updating doctor request status:', updateError);
             return false;
-        }
-
-        // If approved and we have a doctorId, assign the doctor to the conversation
-        if (status === 'approved' && doctorId && data.conversation_id) {
-            const success = await ConversationService.assignDoctorToConversation(
-                data.conversation_id,
-                doctorId
-            );
-
-            if (!success) {
-                console.error('Failed to assign doctor to conversation');
-                return false;
+          }
+    
+          console.log('Update result:', updateData);
+          
+          // If approved and we have a doctorId, assign the doctor to the conversation
+          if (status === 'approved' && doctorId && requestData.conversation_id) {
+            console.log(`Assigning doctor ${doctorId} to conversation ${requestData.conversation_id}`);
+            
+            // Update the conversation separately
+            const { error: convoError } = await supabase
+              .from('conversations')
+              .update({
+                doctor_id: doctorId,
+                is_doctor_chat: true,
+                status: 'active',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', requestData.conversation_id);
+    
+            if (convoError) {
+              console.error('Error assigning doctor to conversation:', convoError);
+              
+              // If conversation update fails, revert the request status change
+              console.log('Reverting request status change due to conversation update failure');
+              await supabase
+                .from('doctor_requests')
+                .update({
+                  status: 'pending',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', requestId);
+                
+              return false;
             }
+            
+            console.log('Doctor successfully assigned to conversation');
+          }
+    
+          return true;
+        } catch (error) {
+          console.error('Exception in updateRequestStatus:', error);
+          return false;
         }
-
-        return true;
-    },
-
-    async getAllRequests(): Promise<any[]> {
+      },
+      
+    async getAllRequests(): Promise<any[]> {f
         // This should only be callable by admins due to RLS policies
         const { data, error } = await supabase
             .from('doctor_requests')

@@ -1,10 +1,10 @@
-// app/(tabs)/_layout.tsx
-import React, { useEffect } from 'react';
+// app/(doctor)/_layout.tsx
+import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from "@/contexts/AuthProvider";
+import { useAuth } from '@/contexts/AuthProvider';
 import { Redirect } from 'expo-router';
-import { ActivityIndicator, Image, Text, View } from 'react-native';
+import { Image, Text, View } from 'react-native';
 import icons from "@/constants/icons";
 
 const TabIcon = ({
@@ -13,7 +13,7 @@ const TabIcon = ({
   title,
 }: {
   focused: boolean;
-  icon: ImageSourcePropType;
+  icon: any;
   title: string;
 }) => (
   <View className="flex-1 mt-3 flex flex-col items-center">
@@ -33,7 +33,7 @@ const TabIcon = ({
   </View>
 );
 
-// Custom icon component for Ionicons
+// Custom tab icon using Ionicons
 const IonTabIcon = ({
   focused,
   name,
@@ -59,19 +59,19 @@ const IonTabIcon = ({
   </View>
 );
 
-export default function TabsLayout() {
-  const { isAuthenticated } = useAuth();
+export default function DoctorLayout() {
+  const { isAuthenticated, user } = useAuth();
 
+  // Check if authenticated
   if (!isAuthenticated) {
     return <Redirect href="/login" />;
   }
 
-  // If user is signed in, show tabs
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#0061FF',
-        tabBarInactiveTintColor: '#666876',
+        tabBarActiveTintColor: '#4f46e5',
+        tabBarInactiveTintColor: '#64748b',
         tabBarShowLabel: false,
         tabBarStyle: {
           borderTopWidth: 1,
@@ -85,61 +85,82 @@ export default function TabsLayout() {
           fontSize: 12,
           fontWeight: '500',
         },
-        headerShown: false,
+        headerShown: false, // Remove all headers to avoid double header
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="dashboard"
         options={{
-          title: "Home",
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon={icons.home} title="Home" />,
+          title: "Dashboard",
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon={icons.home} title="Dashboard" />,
         }}
-      />
-
-      <Tabs.Screen
-        name="chat/index"
-        options={{
-          title: 'Chat',
-          tabBarIcon: ({ focused }) => <IonTabIcon focused={focused} name="chatbubble-outline" title="Chat" />,
-        }}
-      />
-      
-
-      
-      <Tabs.Screen
-        name="about"
-        options={{
-          title: 'About',
-          tabBarIcon: ({ focused }) => <IonTabIcon focused={focused} name="information-circle-outline" title="About" />,
-        }}
-      />
-
-      {/* Hidden screens */}
-      <Tabs.Screen
-        name="chat/detail"
-        options={{
-          href: null, 
-        }}
-      />
-      
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ focused }) => <IonTabIcon focused={focused} name="person-outline" title="Profile" />,}}
       />
       
       <Tabs.Screen
         name="conversations"
         options={{
-          href: null, 
+          title: "Chats",
+          tabBarIcon: ({ focused }) => <IonTabIcon focused={focused} name="chatbubbles-outline" title="Chats" />,
         }}
       />
       
       <Tabs.Screen
-        name="request-doctor"
+        name="requests"
         options={{
-          href: null, 
+          title: "Requests",
+          tabBarIcon: ({ focused }) => <IonTabIcon focused={focused} name="notifications-outline" title="Requests" />,
+        }}
+      />
+      
+      <Tabs.Screen
+        name="patients"
+        options={{
+          title: "Patients",
+          tabBarIcon: ({ focused }) => <IonTabIcon focused={focused} name="people-outline" title="Patients" />,
+        }}
+      />
+        <Tabs.Screen
+        name="profile"
+        options={{
+          title: "Profile",
+          tabBarIcon: ({ focused }) => <IonTabIcon focused={focused} name="person-outline" title="Profile" />,
+        }}
+      />
+
+      
+      {/* Hidden screens */}
+      <Tabs.Screen
+        name="chat"
+        options={{
+          href: null,
+        }}
+      />
+      
+      <Tabs.Screen
+        name="schedule"
+        options={{
+          href: null,
+        }}
+      />
+      
+      <Tabs.Screen
+        name="guidelines"
+        options={{
+          href: null,
+        }}
+      />
+      
+      <Tabs.Screen
+        name="request-details"
+        options={{
+          href: null,
+        }}
+      />
+      
+      <Tabs.Screen
+        name="patient-details"
+        options={{
+          href: null,
         }}
       />
     </Tabs>
