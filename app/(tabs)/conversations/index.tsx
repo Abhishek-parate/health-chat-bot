@@ -1,166 +1,249 @@
+// app/(tabs)/conversations/index.tsx
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../../lib/clerk';
-import { getUserConversations } from '../../../lib/api';
-import { Conversation } from '../../../types';
-import { Ionicons } from '@expo/vector-icons';
+import { FontAwesome } from '@expo/vector-icons';
+import { 
+  getUserConversations, 
+  deleteConversation, 
+  updateConversationTitle,
+  Conversation
+} from '../../../lib/chatService';
 
 export default function ConversationsScreen() {
   const router = useRouter();
   const { user, isSignedIn } = useAuth();
+  
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-
-  useEffect(() => {
-    if (isSignedIn && user) {
-      fetchConversations();
-    }
-  }, [isSignedIn, user]);
-
-  const fetchConversations = async () => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  const loadConversations = async () => {
     if (!user) return;
     
     try {
-      setIsLoading(true);
-      const response = await getUserConversations(user.id);
-      
-      if (response.success && response.data) {
-        setConversations(response.data);
-      } else {
-        console.error('Failed to fetch conversations:', response.error);
-      }
-    } catch (error) {
-      console.error('Error fetching conversations:', error);
+      setError(null);
+      const userConversations = await getUserConversations(user.id);
+      setConversations(userConversations);
+    } catch (err) {
+      console.error('Error loading conversations:', err);
+      setError('Failed to load conversations');
     } finally {
       setIsLoading(false);
-      setRefreshing(false);
+      setIsRefreshing(false);
     }
   };
-
+  
+  useEffect(() => {
+    if (isSignedIn && user) {
+      loadConversations();
+    } else if (!isSignedIn && !isLoading) {
+      router.replace('/sign-in');
+    }
+  }, [isSignedIn, user]);
+  
   const handleRefresh = () => {
-    setRefreshing(true);
-    fetchConversations();
+    setIsRefreshing(true);
+    loadConversations();
   };
-
-  const navigateToChat = (conversationId: string, title: string) => {
-    router.push({
-      pathname: '/chat/[id]',
-      params: { id: conversationId, title }
+  
+  const handleDelete = (conversation: Conversation) => {
+    Alert.alert(
+      "Delete Conversation",
+      "Are you sure you want to delete this conversation? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const success = await deleteConversation(conversation.id);
+              if (success) {
+                // Remove from local state
+                setConversations(prev => 
+                  prev.filter(c => c.id !== conversation.id)
+                );
+              } else {
+                Alert.alert(
+                  "Error",
+                  "Failed to delete conversation. Please try again."
+                );
+              }
+            } catch (error) {
+              console.error('Error deleting conversation:', error);
+              Alert.alert(
+                "Error",
+                "An unexpected error occurred. Please try again."
+              );
+            }
+          }
+        }
+      ]
+    );
+  };
+  
+  const handleRename = (conversation: Conversation) => {
+    Alert.prompt(
+      "Rename Conversation",
+      "Enter a new name for this conversation:",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Rename",
+          onPress: async (newTitle) => {
+            if (!newTitle || newTitle.trim() === "") return;
+            
+            try {
+              const success = await updateConversationTitle(
+                conversation.id,
+                newTitle.trim()
+              );
+              
+              if (success) {
+                // Update local state
+                setConversations(prev => 
+                  prev.map(c => 
+                    c.id === conversation.id 
+                      ? { ...c, title: newTitle.trim() } 
+                      : c
+                  )
+                );
+              } else {
+                Alert.alert(
+                  "Error",
+                  "Failed to rename conversation. Please try again."
+                );
+              }
+            } catch (error) {
+              console.error('Error renaming conversation:', error);
+              Alert.alert(
+                "Error",
+                "An unexpected error occurred. Please try again."
+              );
+            }
+          }
+        }
+      ],
+      "plain-text",
+      conversation.title
+    );
+  };
+  
+  const renderItem = ({ item }: { item: Conversation }) => {
+    const date = new Date(item.updatedAt);
+    const formattedDate = date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
     });
-  };
-
-  const navigateToNewChat = () => {
-    router.push('/chat');
-  };
-
-  const formatDate = (date: Date) => {
-    const now = new Date();
-    const messageDate = new Date(date);
     
-    if (
-      messageDate.getDate() === now.getDate() &&
-      messageDate.getMonth() === now.getMonth() &&
-      messageDate.getFullYear() === now.getFullYear()
-    ) {
-      // Today - show time
-      return messageDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (
-      now.getTime() - messageDate.getTime() < 7 * 24 * 60 * 60 * 1000
-    ) {
-      // Within the last week - show day name
-      return messageDate.toLocaleDateString([], { weekday: 'short' });
-    } else {
-      // Older - show date
-      return messageDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
-    }
-  };
-
-  const renderConversationItem = ({ item }: { item: Conversation }) => (
-    <TouchableOpacity
-      className="p-4 border-b border-gray-200"
-      onPress={() => navigateToChat(item.id, item.title)}
-    >
-      <View className="flex-row justify-between items-center">
-        <View className="flex-1 mr-2">
-          <Text className="font-bold text-lg mb-1" numberOfLines={1}>
+    return (
+      <TouchableOpacity
+        className="flex-row items-center p-4 border-b border-gray-200"
+        onPress={() => router.push(`/chat?conversationId=${item.id}`)}
+      >
+        <View className="h-10 w-10 bg-blue-100 rounded-full items-center justify-center mr-3">
+          <FontAwesome name="comments" size={18} color="#3b82f6" />
+        </View>
+        
+        <View className="flex-1">
+          <Text className="text-gray-800 font-medium" numberOfLines={1}>
             {item.title}
           </Text>
-          <Text className="text-gray-600" numberOfLines={2}>
-            {item.preview || "Start a new conversation..."}
+          <Text className="text-gray-500 text-sm">
+            {formattedDate}
           </Text>
         </View>
-        <View className="items-end">
-          <Text className="text-xs text-gray-500 mb-1">
-            {formatDate(item.lastMessageDate)}
-          </Text>
-          {item.category && (
-            <View className="bg-blue-100 rounded-full px-2 py-1">
-              <Text className="text-xs text-blue-700">{item.category}</Text>
-            </View>
-          )}
+        
+        <View className="flex-row">
+          <TouchableOpacity
+            className="p-2"
+            onPress={() => handleRename(item)}
+          >
+            <FontAwesome name="pencil" size={16} color="#6b7280" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            className="p-2"
+            onPress={() => handleDelete(item)}
+          >
+            <FontAwesome name="trash" size={16} color="#ef4444" />
+          </TouchableOpacity>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
-
+      </TouchableOpacity>
+    );
+  };
+  
   if (!isSignedIn) {
     return (
       <View className="flex-1 justify-center items-center p-4">
-        <Text className="text-lg text-center mb-4">
-          Please sign in to see your chat history
-        </Text>
+        <ActivityIndicator size="large" color="#0ea5e9" />
+        <Text className="mt-4 text-gray-600">Checking authentication...</Text>
       </View>
     );
   }
-
+  
+  if (isLoading) {
+    return (
+      <View className="flex-1 justify-center items-center p-4">
+        <ActivityIndicator size="large" color="#0ea5e9" />
+        <Text className="mt-4 text-gray-600">Loading conversations...</Text>
+      </View>
+    );
+  }
+  
   return (
     <View className="flex-1 bg-white">
       {/* Header */}
       <View className="bg-white px-4 pt-12 pb-4 border-b border-gray-200">
         <View className="flex-row items-center justify-between">
-          <Text className="text-xl font-bold">Conversations</Text>
-          <TouchableOpacity
-            onPress={navigateToNewChat}
-            className="bg-blue-500 p-2 rounded-full"
+          <Text className="text-xl font-bold flex-1">Conversations</Text>
+          
+          <TouchableOpacity 
+            className="p-2"
+            onPress={() => router.push('/chat')}
           >
-            <Ionicons name="add" size={24} color="white" />
+            <FontAwesome name="plus" size={20} color="#3b82f6" />
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* Content Area */}
-      {isLoading && !refreshing ? (
-        <View className="flex-1 justify-center items-center">
-          <ActivityIndicator size="large" color="#4f46e5" />
-          <Text className="mt-2 text-gray-500">Loading conversations...</Text>
-        </View>
-      ) : conversations.length > 0 ? (
-        <FlatList
-          data={conversations}
-          renderItem={renderConversationItem}
-          keyExtractor={(item) => item.id}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-          }
-        />
-      ) : (
+      
+      {/* Conversations List */}
+      {error ? (
         <View className="flex-1 justify-center items-center p-4">
-          <Ionicons name="chatbubble-ellipses-outline" size={48} color="#9ca3af" />
-          <Text className="text-lg text-center text-gray-500 mt-4 mb-2">
-            No conversations yet
-          </Text>
-          <Text className="text-center text-gray-400 mb-6">
-            Start a new chat to get health information and guidance
-          </Text>
+          <Text className="text-red-500 mb-4">{error}</Text>
           <TouchableOpacity
-            onPress={navigateToNewChat}
-            className="bg-blue-500 px-6 py-3 rounded-full"
+            className="bg-blue-500 px-4 py-2 rounded-lg"
+            onPress={handleRefresh}
           >
-            <Text className="text-white font-medium">Start New Chat</Text>
+            <Text className="text-white">Try Again</Text>
           </TouchableOpacity>
         </View>
+      ) : conversations.length === 0 ? (
+        <View className="flex-1 justify-center items-center p-4">
+          <FontAwesome name="comments-o" size={48} color="#d1d5db" />
+          <Text className="text-gray-500 mt-4 mb-6 text-center">
+            You don't have any conversations yet.
+          </Text>
+          <TouchableOpacity
+            className="bg-blue-500 px-4 py-2 rounded-lg"
+            onPress={() => router.push('/chat')}
+          >
+            <Text className="text-white">Start a New Chat</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={conversations}
+          renderItem={renderItem}
+          keyExtractor={item => item.id}
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          contentContainerStyle={{ flexGrow: 1 }}
+        />
       )}
     </View>
   );

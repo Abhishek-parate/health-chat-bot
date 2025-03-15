@@ -1,128 +1,168 @@
+// app/(tabs)/chat/index.tsx
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../../lib/clerk';
-import { createNewConversation, sendMessage } from '../../../lib/api';
+import { FontAwesome } from '@expo/vector-icons';
 import { ChatInterface } from '../../../components/chat/ChatInterface';
-import { ChatMessage } from '../../../types';
-import { v4 as uuidv4 } from '../../../lib/uuid-helper';
+import { 
+  createConversation, 
+  getConversationMessages, 
+  sendMessageAndGetResponse,
+  ChatMessage
+} from '../../../lib/chatService';
 
 export default function ChatScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { user, isSignedIn } = useAuth();
+  
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-
-  // Create a new conversation when needed
-  const createConversation = async (initialMessage: string): Promise<string> => {
-    if (!user) {
-      Alert.alert("Authentication Required", "Please sign in to start a conversation");
-      throw new Error("User not authenticated");
-    }
-
-    try {
-      // Default title is the first few words of the first message
-      const title = initialMessage.substring(0, 30) + (initialMessage.length > 30 ? '...' : '');
-      
-      const response = await createNewConversation(user.id, title);
-      
-      if (response.success && response.data) {
-        console.log('Created new conversation:', response.data.id);
-        setConversationId(response.data.id);
-        return response.data.id;
-      } else {
-        throw new Error(response.error || 'Failed to create conversation');
-      }
-    } catch (error) {
-      console.error('Error creating conversation:', error);
-      Alert.alert("Error", "Failed to create a new conversation. Please try again.");
-      throw error;
-    }
-  };
-
-  // Handle sending a message and getting AI response
-  const handleSendMessage = async (content: string): Promise<string> => {
-    try {
-      // Create a temporary user message for immediate UI display
-      const tempUserMessage: ChatMessage = {
-        id: uuidv4(),
-        content,
-        role: 'user',
-        createdAt: new Date(),
-      };
-      
-      setMessages(prev => [...prev, tempUserMessage]);
-      
-      // Create conversation if needed
-      const currentConversationId = conversationId || await createConversation(content);
-      
-      // Send message to API
-      const response = await sendMessage(currentConversationId, content);
-      
-      if (response.success && response.data) {
-        // Add AI message to local state
-        setMessages(prev => [...prev, {
-          id: response.data.id,
-          content: response.data.content,
-          role: response.data.role,
-          createdAt: new Date(response.data.createdAt)
-        }]);
-        
-        return response.data.content;
-      } else {
-        throw new Error(response.error || 'Failed to get response');
-      }
-    } catch (error) {
-      console.error('Error in message flow:', error);
-      throw error;
-    }
-  };
-
-  // If user navigates to a new chat while in an existing conversation,
-  // redirect to that conversation's specific route
+  
+  // Initialize conversation on load
   useEffect(() => {
-    if (conversationId && messages.length > 0) {
-      // Get the title from the first user message
-      const firstUserMessage = messages.find(m => m.role === 'user');
-      const title = firstUserMessage
-        ? firstUserMessage.content.substring(0, 30) + (firstUserMessage.content.length > 30 ? '...' : '')
-        : 'New Chat';
-        
-      router.replace({
-        pathname: `/chat/${conversationId}`,
-        params: { title }
-      });
+    if (!isSignedIn || !user) return;
+    
+    const initializeChat = async () => {
+      setIsLoading(true);
+      setError(null);
+      
+      try {
+        // Check if conversationId was passed as a parameter
+        if (params.conversationId) {
+          const convoId = params.conversationId as string;
+          setConversationId(convoId);
+          
+          // Load messages for this conversation
+          const existingMessages = await getConversationMessages(convoId);
+          setMessages(existingMessages);
+        } else {
+          // Create a new conversation
+          const conversation = await createConversation(user.id);
+          
+          if (!conversation) {
+            throw new Error('Failed to create conversation');
+          }
+          
+          setConversationId(conversation.id);
+          
+          // If topic was provided, send an initial message
+          if (params.topic) {
+            const topic = params.topic as string;
+            await handleSendMessage(`Tell me about ${topic}`);
+          }
+        }
+      } catch (err) {
+        console.error('Error initializing chat:', err);
+        setError('Failed to initialize chat. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    initializeChat();
+  }, [isSignedIn, user, params.conversationId, params.topic]);
+  
+  // Handle sending a message
+  const handleSendMessage = async (message: string): Promise<string> => {
+    if (!conversationId || !message.trim()) {
+      return "Could not process your message. Please try again.";
     }
-  }, [conversationId, messages]);
-
+    
+    try {
+      const { userMessage, aiMessage } = await sendMessageAndGetResponse(
+        conversationId,
+        message
+      );
+      
+      // If we got a valid AI message, return its content
+      if (aiMessage) {
+        // Update the local messages state (optional, since the ChatInterface component 
+        // already handles displaying messages)
+        setMessages(prev => [
+          ...prev,
+          userMessage!,
+          aiMessage
+        ]);
+        
+        return aiMessage.content;
+      } else {
+        throw new Error('Failed to get AI response');
+      }
+    } catch (error) {
+      console.error('Error in handleSendMessage:', error);
+      return "Sorry, I couldn't process your request. Please try again.";
+    }
+  };
+  
+  // If not signed in, redirect to sign in page
+  useEffect(() => {
+    if (!isSignedIn && !isLoading) {
+      router.replace('/sign-in');
+    }
+  }, [isSignedIn, isLoading]);
+  
   if (!isSignedIn) {
     return (
       <View className="flex-1 justify-center items-center p-4">
-        <Text className="text-lg text-center mb-4">
-          Please sign in to start a conversation
-        </Text>
+        <ActivityIndicator size="large" color="#0ea5e9" />
+        <Text className="mt-4 text-gray-600">Checking authentication...</Text>
       </View>
     );
   }
-
+  
+  if (isLoading) {
+    return (
+      <View className="flex-1 justify-center items-center p-4">
+        <ActivityIndicator size="large" color="#0ea5e9" />
+        <Text className="mt-4 text-gray-600">Loading your chat...</Text>
+      </View>
+    );
+  }
+  
+  if (error) {
+    return (
+      <View className="flex-1 justify-center items-center p-4">
+        <Text className="text-red-500 mb-4">{error}</Text>
+        <TouchableOpacity
+          className="bg-blue-500 px-4 py-2 rounded-lg"
+          onPress={() => router.replace('/chat')}
+        >
+          <Text className="text-white">Try Again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+  
   return (
     <View className="flex-1 bg-white">
       {/* Header */}
       <View className="bg-white px-4 pt-12 pb-4 border-b border-gray-200">
         <View className="flex-row items-center justify-between">
-          <Text className="text-xl font-bold">Health Chat</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => router.push('/conversations')}
-            className="p-2"
+            className="mr-3"
           >
-            <Ionicons name="list" size={24} color="#4f46e5" />
+            <FontAwesome name="list" size={20} color="#4b5563" />
+          </TouchableOpacity>
+          
+          <Text className="text-xl font-bold flex-1">Health Chat</Text>
+          
+          <TouchableOpacity 
+            className="p-2"
+            onPress={() => router.replace('/chat')}
+          >
+            <FontAwesome name="plus" size={20} color="#3b82f6" />
           </TouchableOpacity>
         </View>
       </View>
       
       {/* Chat Interface */}
       <ChatInterface
+        conversationId={conversationId || undefined}
         initialMessages={messages}
         onSendMessage={handleSendMessage}
       />

@@ -15,7 +15,8 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.bitlearners.HealthSync"
     },
     "web": {
       "bundler": "metro",
@@ -32,13 +33,18 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-        
-        
-        
       ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "8b3a5ff0-1934-4fbb-957d-250fff16f3b4"
+      }
     }
   }
 }

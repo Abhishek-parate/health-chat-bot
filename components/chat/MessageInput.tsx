@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { View, TextInput, TouchableOpacity, Text, ActivityIndicator, Platform, KeyboardAvoidingView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { v4 as uuidv4 } from '../../lib/uuid-helper';
 
 interface MessageInputProps {
   onSendMessage: (message: string) => Promise<void> | void;
