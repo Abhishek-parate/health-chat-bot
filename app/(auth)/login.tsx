@@ -78,64 +78,70 @@ export default function LoginScreen() {
     };
 
     // Handle login with validation and Supabase
-    const handleLogin = async () => {
-        const isEmailValid = validateEmail(email);
-        const isPasswordValid = validatePassword(password);
+const handleLogin = async () => {
+  const isEmailValid = validateEmail(email);
+  const isPasswordValid = validatePassword(password);
 
-        if (isEmailValid && isPasswordValid) {
-            setLoading(true);
-            const { data, error } = await supabase.auth.signInWithPassword({
-                email: email,
-                password: password,
-            });
+  if (isEmailValid && isPasswordValid) {
+      setLoading(true);
+      try {
+          const { data, error } = await supabase.auth.signInWithPassword({
+              email: email,
+              password: password,
+          });
 
-            if (error) {
-                setLoading(false);
-                Alert.alert('Login Error', error.message);
-                return;
-            }
+          if (error) {
+              throw error;
+          }
 
-            const user = data.user;
-            if (!user) {
-                setLoading(false);
-                Alert.alert('Error', 'User not found');
-                return;
-            }
+          const user = data.user;
+          if (!user) {
+              throw new Error('User not found');
+          }
 
-            // Fetch user profile with number verification status
-            const { data: profile, error: profileError } = await supabase
-                .from('profiles')
-                .select('number, phone_verified')
-                .eq('id', user.id)
-                .maybeSingle();
+          // Fetch user profile with role
+          const { data: profile, error: profileError } = await supabase
+              .from('profiles')
+              .select('role, phone_number, phone_verified, website, bio')
+              .eq('id', user.id)
+              .maybeSingle();
 
-            if (profileError) {
-                setLoading(false);
-                Alert.alert('Error', 'Failed to fetch user profile');
-                return;
-            }
+          if (profileError) {
+              throw profileError;
+          }
 
-            // Handle different profile scenarios
-            if (!profile) {
-                // No profile exists - redirect to number verification
-                router.replace('/profile/(number)');
-            } else if (!profile.number || !profile.phone_verified) {
-                // Profile exists but number not verified - redirect to number verification
-                router.replace('/profile/(number)');
-
-            } else if (!profile.website || profile.website === '' || !profile.bio || profile.bio === '') {
-                // Number is verified but website or bio is empty - redirect to profile view
-                router.replace('/profile/viewprofile');
-
-                
-            } else {
-                // Profile exists and number is verified - proceed to main app
-                router.replace('/(tabs)');
-            }
-        }
-    };
-
-
+          // Handle different profile scenarios
+          if (!profile) {
+              // No profile exists - create a basic profile
+              await supabase
+                  .from('profiles')
+                  .insert([{
+                      id: user.id,
+                      role: 'user',
+                      status: 'online'
+                  }]);
+              router.replace('/(tabs)');
+          } else {
+              // Route based on user role
+              if (profile.role === 'admin') {
+                  // Admin goes to admin dashboard
+                  router.replace('/(admin)/dashboard');
+              } else if (profile.role === 'doctor') {
+                  // Doctor goes to doctor dashboard
+                  router.replace('/(doctor)/dashboard');
+              } else {
+                  // Regular user - go to main app
+                  router.replace('/(tabs)');
+              }
+          }
+      } catch (error) {
+          console.error('Login error:', error);
+          Alert.alert('Login Error', error.message || 'Failed to login');
+      } finally {
+          setLoading(false);
+      }
+  }
+};
 
 
     // Input styles based on validation state
