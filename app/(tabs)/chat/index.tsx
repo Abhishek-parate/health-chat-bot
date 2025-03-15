@@ -2,20 +2,20 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useAuth } from '../../../lib/clerk';
+import { useAuth } from '@/contexts/AuthProvider'; // Updated import for Supabase authentication
 import { FontAwesome } from '@expo/vector-icons';
-import { ChatInterface } from '../../../components/chat/ChatInterface';
+import { ChatInterface } from '@/components/chat/ChatInterface';
 import { 
   createConversation, 
   getConversationMessages, 
   sendMessageAndGetResponse,
   ChatMessage
-} from '../../../lib/chatService';
+} from '@/lib/chatService';
 
 export default function ChatScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { user, isSignedIn } = useAuth();
+  const { user, isAuthenticated } = useAuth(); // Updated auth props for Supabase
   
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +24,7 @@ export default function ChatScreen() {
   
   // Initialize conversation on load
   useEffect(() => {
-    if (!isSignedIn || !user) return;
+    if (!isAuthenticated || !user) return;
     
     const initializeChat = async () => {
       setIsLoading(true);
@@ -64,7 +64,7 @@ export default function ChatScreen() {
     };
     
     initializeChat();
-  }, [isSignedIn, user, params.conversationId, params.topic]);
+  }, [isAuthenticated, user, params.conversationId, params.topic]);
   
   // Handle sending a message
   const handleSendMessage = async (message: string): Promise<string> => {
@@ -100,16 +100,16 @@ export default function ChatScreen() {
   
   // If not signed in, redirect to sign in page
   useEffect(() => {
-    if (!isSignedIn && !isLoading) {
-      router.replace('/sign-in');
+    if (!isAuthenticated && !isLoading) {
+      router.replace('/(auth)/login');
     }
-  }, [isSignedIn, isLoading]);
+  }, [isAuthenticated, isLoading]);
   
-  if (!isSignedIn) {
+  if (!isAuthenticated) {
     return (
       <View className="flex-1 justify-center items-center p-4">
         <ActivityIndicator size="large" color="#0ea5e9" />
-        <Text className="mt-4 text-gray-600">Checking authentication...</Text>
+        <Text className="mt-4 text-gray-600 font-rubik">Checking authentication...</Text>
       </View>
     );
   }
@@ -118,7 +118,7 @@ export default function ChatScreen() {
     return (
       <View className="flex-1 justify-center items-center p-4">
         <ActivityIndicator size="large" color="#0ea5e9" />
-        <Text className="mt-4 text-gray-600">Loading your chat...</Text>
+        <Text className="mt-4 text-gray-600 font-rubik">Loading your chat...</Text>
       </View>
     );
   }
@@ -126,12 +126,12 @@ export default function ChatScreen() {
   if (error) {
     return (
       <View className="flex-1 justify-center items-center p-4">
-        <Text className="text-red-500 mb-4">{error}</Text>
+        <Text className="text-red-500 mb-4 font-rubik">{error}</Text>
         <TouchableOpacity
           className="bg-blue-500 px-4 py-2 rounded-lg"
           onPress={() => router.replace('/chat')}
         >
-          <Text className="text-white">Try Again</Text>
+          <Text className="text-white font-rubik-medium">Try Again</Text>
         </TouchableOpacity>
       </View>
     );
@@ -149,7 +149,7 @@ export default function ChatScreen() {
             <FontAwesome name="list" size={20} color="#4b5563" />
           </TouchableOpacity>
           
-          <Text className="text-xl font-bold flex-1">Health Chat</Text>
+          <Text className="text-xl font-rubik-bold flex-1">Health Chat</Text>
           
           <TouchableOpacity 
             className="p-2"

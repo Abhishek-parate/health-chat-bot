@@ -96,48 +96,63 @@ export default function SignupScreen() {
 
     // Form submission handlers with validation
     const handleRegister = async () => {
-        const isEmailValid = validateEmail(email);
-        const isPasswordValid = validatePassword(password);
-        const isNameValid = validateName(name);
+      const isEmailValid = validateEmail(email);
+      const isPasswordValid = validatePassword(password);
+      const isNameValid = validateName(name);
     
-        if (isEmailValid && isPasswordValid && isNameValid) {
-            setLoading(true);
-            try {
-                console.log('Starting signup with:', { email, name }); // Debug log
-                
-                const { data, error } = await supabase.auth.signUp({
-                    email: email.trim().toLowerCase(),
-                    password: password,
-                    options: {
-                        data: {
-                            full_name: name.trim(),
-                        }
-                    }
-                });
-                
-                console.log('Signup response:', data, error);
-                
-                if (error) {
-                    console.error('Detailed error:', error);
-                    throw error;
+      if (isEmailValid && isPasswordValid && isNameValid) {
+        setLoading(true);
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        while (retryCount < maxRetries) {
+          try {
+            console.log('Starting signup attempt', retryCount + 1, 'with:', { email, name });
+            
+            const { data, error } = await supabase.auth.signUp({
+              email: email.trim().toLowerCase(),
+              password: password,
+              options: {
+                data: {
+                  full_name: name.trim(),
                 }
-    
-                if (!data?.session) {
-                    setCurrentScreen('confirmation');
-                } else {
-                    router.replace('/home');
-                }
-                
-            } catch (error) {
-                console.error('Signup error:', error);
-                Alert.alert(
-                    'Registration Error',
-                    `Error: ${error.message}\nPlease try again or contact support.`
-                );
-            } finally {
-                setLoading(false);
+              }
+            });
+            
+            console.log('Signup response status:', data ? 'success' : 'failed');
+            
+            if (error) {
+              console.error('Detailed error:', error);
+              throw error;
             }
+    
+            if (!data?.session) {
+              setCurrentScreen('confirmation');
+            } else {
+              router.replace('/home');
+            }
+            
+            break; // Success - exit the retry loop
+            
+          } catch (error) {
+            console.error('Signup error on attempt', retryCount + 1, ':', error);
+            
+            if (retryCount === maxRetries - 1) {
+              // This was our last attempt
+              Alert.alert(
+                'Registration Error',
+                `Error: ${error.message || 'Network request failed'}\nPlease check your connection and try again.`
+              );
+            } else {
+              // Wait before retrying (increasing delay with each retry)
+              await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+              retryCount++;
+            }
+          }
         }
+        
+        setLoading(false);
+      }
     };
 
     const handleResendEmail = async () => {

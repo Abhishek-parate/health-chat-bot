@@ -6,17 +6,32 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-// Import useAuth from your Clerk implementation
-import { useAuth } from '@/lib/clerk'; // Update path if needed
+// Import useAuth from Supabase implementation
+import { useAuth } from '@/contexts/AuthProvider'; 
 
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, signOut, isLoading, isSignedIn } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
   const [darkMode, setDarkMode] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [dataSharingEnabled, setDataSharingEnabled] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  
+  // Get user profile data from Supabase user
+  const getUserProfileData = () => {
+    if (!user) return { fullName: 'User', email: 'user@example.com', imageUrl: null, isAdmin: false };
+    
+    const fullName = user.user_metadata?.full_name || 'User';
+    const email = user.email || 'user@example.com';
+    const imageUrl = user.user_metadata?.avatar_url || null;
+    // You can set custom criteria for admin users
+    const isAdmin = user.email === 'admin@example.com' || user.role === 'admin';
+    
+    return { fullName, email, imageUrl, isAdmin };
+  };
+  
+  const profileData = getUserProfileData();
   
   const handleLogout = async () => {
     Alert.alert(
@@ -35,53 +50,20 @@ export default function ProfileScreen() {
               setIsLoggingOut(true);
               
               // Direct navigation if user is not signed in
-              if (!isSignedIn) {
+              if (!isAuthenticated) {
                 console.log('User is already signed out, redirecting to login');
                 router.replace('/(auth)/login');
                 return;
               }
               
-              // Use try/catch block with SecureStore to clear tokens first
-              // This avoids the "You are signed out" error
-              try {
-                // Import for local use to avoid importing at the top level
-                const SecureStore = require('expo-secure-store');
-                
-                // Define known Clerk token keys that need to be cleared
-                const knownClerkKeys = [
-                  'clerk-js-session',
-                  'clerk-frontend-api',
-                  'clerk-session-id',
-                  '__clerk_client_jwt',
-                  'clerk_session_token'
-                ];
-                
-                // Delete all known Clerk-related tokens
-                for (const key of knownClerkKeys) {
-                  await SecureStore.deleteItemAsync(key).catch(() => {
-                    // Ignore errors when clearing tokens
-                  });
-                }
-                
-                console.log('Cleared auth tokens');
-              } catch (e) {
-                // Ignore token clearing errors
-              }
+              // Logout with Supabase
+              await logout();
+              console.log('Successfully signed out');
               
-              // Silent attempt to sign out
-              try {
-                await signOut();
-                console.log('Successfully signed out');
-              } catch (e) {
-                // Ignore any errors from signOut
-                // We've already cleared the tokens
-              }
-              
-              // Redirect to login regardless of signOut result
-              console.log('Redirecting to login screen');
+              // Redirect to login
               router.replace('/(auth)/login');
             } catch (error) {
-              console.log('An unexpected error occurred during logout');
+              console.error('An unexpected error occurred during logout:', error);
               
               // Still redirect to login if there's any error
               router.replace('/(auth)/login');
@@ -96,10 +78,10 @@ export default function ProfileScreen() {
   
   // If user is not signed in, redirect to login
   useEffect(() => {
-    if (!isLoading && !isSignedIn) {
+    if (!isAuthenticated) {
       router.replace('/(auth)/login');
     }
-  }, [isLoading, isSignedIn, router]);
+  }, [isAuthenticated, router]);
   
   const settingsOptions = [
     {
@@ -156,11 +138,11 @@ export default function ProfileScreen() {
     },
   ];
 
-  // Render loading state if still loading
-  if (isLoading) {
+  // Render loading state if no user data yet
+  if (!user) {
     return (
       <View className="flex-1 items-center justify-center">
-        <Text>Loading profile...</Text>
+        <Text className="font-rubik">Loading profile...</Text>
       </View>
     );
   }
@@ -177,7 +159,7 @@ export default function ProfileScreen() {
         className="pt-12 pb-6 px-5 rounded-b-3xl shadow-lg"
       >
         <View className="flex-row justify-between items-center mb-4">
-          <Text className="text-2xl font-bold text-white">Profile</Text>
+          <Text className="text-2xl font-rubik-bold text-white">Profile</Text>
           <TouchableOpacity 
             onPress={() => Alert.alert('Settings', 'Additional profile settings would appear here')}
             className="bg-white/20 p-2 rounded-full"
@@ -189,25 +171,25 @@ export default function ProfileScreen() {
         {/* User Profile Summary */}
         <View className="flex-row items-center bg-white/10 rounded-xl p-4 backdrop-blur-lg">
           <View className="bg-white w-16 h-16 rounded-full items-center justify-center">
-            {user?.imageUrl ? (
+            {profileData.imageUrl ? (
               <Image 
-                source={{ uri: user.imageUrl }} 
+                source={{ uri: profileData.imageUrl }} 
                 className="w-16 h-16 rounded-full" 
               />
             ) : (
-              <Text className="text-2xl font-bold text-indigo-600">
-                {user?.firstName?.charAt(0) || user?.email?.charAt(0) || 'U'}
+              <Text className="text-2xl font-rubik-bold text-indigo-600">
+                {profileData.fullName.charAt(0) || profileData.email.charAt(0) || 'U'}
               </Text>
             )}
           </View>
           
           <View className="ml-4 flex-1">
-            <Text className="text-xl font-bold text-white">{user?.fullName || user?.username || 'User'}</Text>
-            <Text className="text-white/80">{user?.email || 'user@example.com'}</Text>
+            <Text className="text-xl font-rubik-bold text-white">{profileData.fullName}</Text>
+            <Text className="text-white/80 font-rubik">{profileData.email}</Text>
             
-            {user?.id === 'admin-id' && (
+            {profileData.isAdmin && (
               <View className="bg-white/20 px-3 py-1 rounded-full mt-1 self-start">
-                <Text className="text-white text-xs font-medium">Admin</Text>
+                <Text className="text-white text-xs font-rubik-medium">Admin</Text>
               </View>
             )}
           </View>
@@ -228,35 +210,35 @@ export default function ProfileScreen() {
             <View className="w-10 h-10 rounded-full bg-indigo-100 items-center justify-center mb-2">
               <Ionicons name="calendar" size={20} color="#4f46e5" />
             </View>
-            <Text className="text-xl font-bold text-gray-800">28</Text>
-            <Text className="text-gray-500 text-xs">Days Active</Text>
+            <Text className="text-xl font-rubik-bold text-gray-800">28</Text>
+            <Text className="text-gray-500 text-xs font-rubik">Days Active</Text>
           </View>
           
           <View className="bg-white rounded-xl p-4 shadow-sm items-center w-[31%]">
             <View className="w-10 h-10 rounded-full bg-emerald-100 items-center justify-center mb-2">
               <Ionicons name="chatbubbles" size={20} color="#10b981" />
             </View>
-            <Text className="text-xl font-bold text-gray-800">13</Text>
-            <Text className="text-gray-500 text-xs">Conversations</Text>
+            <Text className="text-xl font-rubik-bold text-gray-800">13</Text>
+            <Text className="text-gray-500 text-xs font-rubik">Conversations</Text>
           </View>
           
           <View className="bg-white rounded-xl p-4 shadow-sm items-center w-[31%]">
             <View className="w-10 h-10 rounded-full bg-amber-100 items-center justify-center mb-2">
               <Ionicons name="star" size={20} color="#f59e0b" />
             </View>
-            <Text className="text-xl font-bold text-gray-800">4.9</Text>
-            <Text className="text-gray-500 text-xs">Rating</Text>
+            <Text className="text-xl font-rubik-bold text-gray-800">4.9</Text>
+            <Text className="text-gray-500 text-xs font-rubik">Rating</Text>
           </View>
         </View>
         
         {/* Admin Panel (for admin users only) */}
-        {user?.id === 'admin-id' && (
+        {profileData.isAdmin && (
           <View className="bg-white rounded-xl p-5 shadow-sm mb-6">
             <View className="flex-row items-center mb-4">
               <View className="bg-indigo-100 p-3 rounded-full mr-3">
                 <Ionicons name="shield" size={20} color="#4f46e5" />
               </View>
-              <Text className="text-lg font-bold text-gray-800">Admin Tools</Text>
+              <Text className="text-lg font-rubik-bold text-gray-800">Admin Tools</Text>
             </View>
             
             <View className="flex-row justify-between mb-3">
@@ -265,8 +247,8 @@ export default function ProfileScreen() {
                 className="bg-white border border-indigo-200 rounded-xl py-3 px-4 w-[48%] shadow-sm"
               >
                 <Ionicons name="people" size={22} color="#4f46e5" />
-                <Text className="text-indigo-700 font-medium mt-1">Manage Users</Text>
-                <Text className="text-gray-500 text-xs mt-1">24 active users</Text>
+                <Text className="text-indigo-700 font-rubik-medium mt-1">Manage Users</Text>
+                <Text className="text-gray-500 text-xs mt-1 font-rubik">24 active users</Text>
               </TouchableOpacity>
               
               <TouchableOpacity
@@ -274,8 +256,8 @@ export default function ProfileScreen() {
                 className="bg-white border border-indigo-200 rounded-xl py-3 px-4 w-[48%] shadow-sm"
               >
                 <Ionicons name="document-text" size={22} color="#4f46e5" />
-                <Text className="text-indigo-700 font-medium mt-1">Content</Text>
-                <Text className="text-gray-500 text-xs mt-1">48 topics</Text>
+                <Text className="text-indigo-700 font-rubik-medium mt-1">Content</Text>
+                <Text className="text-gray-500 text-xs mt-1 font-rubik">48 topics</Text>
               </TouchableOpacity>
             </View>
             
@@ -285,8 +267,8 @@ export default function ProfileScreen() {
             >
               <View className="flex-row items-center justify-between">
                 <View>
-                  <Text className="text-white font-medium">View Analytics</Text>
-                  <Text className="text-white/70 text-xs mt-1">User activity, engagement, and more</Text>
+                  <Text className="text-white font-rubik-medium">View Analytics</Text>
+                  <Text className="text-white/70 text-xs mt-1 font-rubik">User activity, engagement, and more</Text>
                 </View>
                 <Ionicons name="arrow-forward" size={18} color="white" />
               </View>
@@ -296,7 +278,7 @@ export default function ProfileScreen() {
         
         {/* Settings Categories */}
         <View className="mb-6">
-          <Text className="text-lg font-bold text-gray-800 mb-4 px-1">Settings</Text>
+          <Text className="text-lg font-rubik-bold text-gray-800 mb-4 px-1">Settings</Text>
           
           <View className="bg-white rounded-xl shadow-sm overflow-hidden mb-4">
             {settingsOptions.slice(0, 3).map((item, index) => (
@@ -312,8 +294,8 @@ export default function ProfileScreen() {
                     <Ionicons name={item.icon} size={18} color="#4f46e5" />
                   </View>
                   <View>
-                    <Text className="text-gray-800 font-medium">{item.title}</Text>
-                    <Text className="text-gray-500 text-xs mt-0.5">{item.description}</Text>
+                    <Text className="text-gray-800 font-rubik-medium">{item.title}</Text>
+                    <Text className="text-gray-500 text-xs mt-0.5 font-rubik">{item.description}</Text>
                   </View>
                 </View>
                 
@@ -346,8 +328,8 @@ export default function ProfileScreen() {
                     <Ionicons name={item.icon} size={18} color="#6b7280" />
                   </View>
                   <View>
-                    <Text className="text-gray-800 font-medium">{item.title}</Text>
-                    <Text className="text-gray-500 text-xs mt-0.5">{item.description}</Text>
+                    <Text className="text-gray-800 font-rubik-medium">{item.title}</Text>
+                    <Text className="text-gray-500 text-xs mt-0.5 font-rubik">{item.description}</Text>
                   </View>
                 </View>
                 
@@ -357,7 +339,7 @@ export default function ProfileScreen() {
           </View>
         </View>
         
-        {/* Logout Button - Updated for better visual feedback */}
+        {/* Logout Button */}
         <TouchableOpacity
           onPress={handleLogout}
           disabled={isLoggingOut}
@@ -366,7 +348,7 @@ export default function ProfileScreen() {
           }`}
         >
           <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-          <Text className="text-red-500 font-medium ml-2">
+          <Text className="text-red-500 font-rubik-medium ml-2">
             {isLoggingOut ? 'Logging Out...' : 'Log Out'}
           </Text>
         </TouchableOpacity>

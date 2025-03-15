@@ -2,25 +2,46 @@
 import React, { useEffect } from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@/lib/clerk';
+import { useAuth } from "@/contexts/AuthProvider";
 import { Redirect } from 'expo-router';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Image, Text, View } from 'react-native';
+import icons from "@/constants/icons";
+
+const TabIcon = ({
+  focused,
+  icon,
+  title,
+}: {
+  focused: boolean;
+  icon: ImageSourcePropType;
+  title: string;
+}) => (
+  <View className="flex-1 mt-3 flex flex-col items-center">
+    <Image
+      source={icon}
+      style={{ tintColor: focused ? "#0061FF" : "#666876" }}
+      resizeMode="contain"
+      className="size-6"
+    />
+    <Text
+      className={`${
+        focused ? "text-primary-400 font-rubik-medium" : "text-black-200 font-rubik"
+      } text-xs w-full text-center mt-1`}
+    >
+      {title}
+    </Text>
+  </View>
+);
+
+
 
 export default function TabsLayout() {
-  const { isSignedIn, isLoading } = useAuth();
+ 
 
-  // Check if the user is signed in
-  if (isLoading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#4f46e5" />
-      </View>
-    );
-  }
+  const { isAuthenticated } = useAuth();
 
-  // If user is not signed in, redirect to login
-  if (!isSignedIn) {
-    return <Redirect href="/(auth)/login" />;
+  if (!isAuthenticated) {
+    return <Redirect href="/login" />;
   }
 
   // If user is signed in, show tabs
@@ -29,12 +50,15 @@ export default function TabsLayout() {
       screenOptions={{
         tabBarActiveTintColor: '#4f46e5',
         tabBarInactiveTintColor: '#64748b',
+        tabBarShowLabel: false,
         tabBarStyle: {
           borderTopWidth: 1,
-          borderTopColor: '#e2e8f0',
+          borderTopColor: '#0061FF1A',
           elevation: 0,
+          backgroundColor: "white",
+          position: "absolute",
+          minHeight: 70,
         },
-        tabBarShowLabel: true,
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: '500',
@@ -45,12 +69,11 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
-          ),
+          title: "Home",
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon={icons.home} title="Home" />,
         }}
       />
+
       <Tabs.Screen
         name="chat/index"
         options={{
@@ -63,10 +86,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color} />
-          ),
+          title: "Profile",
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon={icons.person} title="Profile" />,
         }}
       />
       <Tabs.Screen
