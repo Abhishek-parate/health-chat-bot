@@ -1,276 +1,308 @@
 // app/(doctor)/chat.tsx
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
-  KeyboardAvoidingView,
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  ActivityIndicator, 
+  Image, 
   Platform,
-  ActivityIndicator,
-  Image,
-  StyleSheet
+  KeyboardAvoidingView,
+  SafeAreaView
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/contexts/AuthProvider';
-import {
-  ConversationService,
-  MessageService,
-  ProfileService,
-  Message,
-  Profile
-} from '@/lib/supabaseService';
+import { Ionicons } from '@expo/vector-icons';
+import { ChatInterface } from '@/components/chat/ChatInterface';
+import { ConversationService, MessageService } from '@/lib/supabaseService';
+import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/utils/supabase';
 
 export default function DoctorChatScreen() {
-  const { user } = useAuth();
   const router = useRouter();
   const params = useLocalSearchParams();
-  const conversationId = params.conversationId as string;
+  const { user, isAuthenticated } = useAuth();
   
   const [isLoading, setIsLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [patient, setPatient] = useState<Profile | null>(null);
-  const [doctor, setDoctor] = useState<Profile | null>(null);
+  const [error, setError] = useState(null);
+  const [conversation, setConversation] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [patient, setPatient] = useState(null);
   
-  const flatListRef = useRef<FlatList>(null);
-  
+  // Initialize conversation on load
   useEffect(() => {
-    if (user) {
-      loadChatData();
-      subscribeToMessages();
+    if (!isAuthenticated || !user) return;
+    
+    const initializeChat = async () => {
+      setIsLoading(true);
+      setError(null);
+      
+      try {
+        // Check if conversationId was passed as a parameter
+        if (params.conversationId) {
+          const convoId = params.conversationId.toString();
+          console.log(`Loading conversation with ID: ${convoId}`);
+          
+          // Load conversation details
+          const conversationData = await ConversationService.getConversation(convoId);
+          
+          if (!conversationData) {
+            console.log(`Conversation not found, may be a new conversation`);
+            // This might happen for newly created conversations, redirect back to conversations
+            router.replace('/(doctor)/(tabs)/conversations');
+            return;
+          }
+          
+          console.log(`Conversation loaded successfully: ${JSON.stringify(conversationData)}`);
+          setConversation(conversationData);
+          
+          // Load messages for this conversation
+          const messagesData = await MessageService.getMessages(convoId);
+          console.log(`Loaded ${messagesData.length} messages for conversation`);
+          setMessages(messagesData);
+          
+          // Mark messages as read
+          await MessageService.markMessagesAsRead(convoId, user.id);
+          
+          // Load patient profile
+          if (conversationData.user_id) {
+            console.log(`Loading patient profile for user ID: ${conversationData.user_id}`);
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', conversationData.user_id)
+              .maybeSingle();
+                
+            if (data) {
+              console.log(`Patient profile loaded successfully: ${data.full_name}`);
+              setPatient(data);
+            } else {
+              console.log('Patient profile not found, using default');
+              // Create a default patient object
+              setPatient({
+                id: conversationData.user_id,
+                full_name: 'Patient',
+                avatar_url: null
+              });
+            }
+          }
+        } else {
+          console.log('No conversationId provided, redirecting to conversations');
+          // Redirect back to conversations list if no conversation ID
+          router.replace('/(doctor)/(tabs)/conversations');
+          return;
+        }
+      } catch (err) {
+        console.error('Error initializing chat:', err);
+        setError('Failed to load conversation. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    initializeChat();
+  }, [isAuthenticated, user, params.conversationId]);
+  
+  // Handle sending a message
+  const handleSendMessage = async (message) => {
+    if (!conversation?.id || !message.trim()) {
+      return "Could not send your message. Please try again.";
     }
     
-    return () => {
-      supabase.removeAllChannels();
-    };
-  }, [user, conversationId]);
-  
-  const loadChatData = async () => {
-    setIsLoading(true);
     try {
-      // Get conversation details
-      const conversation = await ConversationService.getConversation(conversationId);
+      console.log(`Sending message to conversation ${conversation.id}: ${message.substring(0, 30)}...`);
+      // Create a message from the doctor
+      const sentMessage = await MessageService.sendMessage(
+        conversation.id,
+        'doctor',
+        message,
+        user.id
+      );
       
-      if (!conversation) {
-        console.error('Conversation not found');
-        router.replace('/(doctor)/conversations');
-        return;
-      }
-      
-      // Get patient profile
-      if (conversation.user_id) {
-        const patientProfile = await ProfileService.getProfile(conversation.user_id);
-        setPatient(patientProfile);
-      }
-      
-      // Get doctor profile (should be current user)
-      if (user?.id) {
-        const doctorProfile = await ProfileService.getProfile(user.id);
-        setDoctor(doctorProfile);
-      }
-      
-      // Get messages
-      const chatMessages = await MessageService.getMessages(conversationId);
-      setMessages(chatMessages);
-      
-      // Mark messages as read
-      if (user?.id) {
-        await MessageService.markMessagesAsRead(conversationId, user.id);
+      if (sentMessage) {
+        console.log('Message sent successfully');
+        // Update local messages state
+        setMessages(prev => [...prev, sentMessage]);
+        return '';
+      } else {
+        throw new Error('Failed to send message');
       }
     } catch (error) {
-      console.error('Error loading chat data:', error);
+      console.error('Error in handleSendMessage:', error);
+      return "Sorry, I couldn't send your message. Please try again.";
+    }
+  };
+  
+  // If not signed in, redirect to sign in page
+  useEffect(() => {
+    if (!isAuthenticated && !isLoading) {
+      console.log('User not authenticated, redirecting to login');
+      router.replace('/(auth)/login');
+    }
+  }, [isAuthenticated, isLoading]);
+  
+  // Handle closing the conversation
+  const handleCloseConversation = async () => {
+    try {
+      console.log(`Closing conversation ${conversation.id}`);
+      setIsLoading(true);
+      const success = await ConversationService.updateConversation(
+        conversation.id,
+        { status: 'closed' }
+      );
+      
+      if (success) {
+        console.log('Conversation closed successfully');
+        // Optionally send a system message
+        await MessageService.sendMessage(
+          conversation.id,
+          'assistant',
+          'This conversation has been closed by the doctor.',
+          null
+        );
+        
+        // Update local state
+        setConversation(prev => ({ ...prev, status: 'closed' }));
+      }
+    } catch (error) {
+      console.error('Error closing conversation:', error);
     } finally {
       setIsLoading(false);
     }
   };
   
-  const subscribeToMessages = () => {
-    const messagesSubscription = supabase
-      .channel('messages')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`
-        },
-        async (payload) => {
-          const newMsg = payload.new as Message;
-          
-          // Only add if not from the current user
-          if (newMsg.sender_id !== user?.id) {
-            setMessages(prev => [...prev, newMsg]);
-            
-            // Mark as read
-            if (user?.id) {
-              await MessageService.markMessagesAsRead(conversationId, user.id);
-            }
-          }
-        }
-      )
-      .subscribe();
-  };
-  
-  const handleSendMessage = async () => {
-    if (!newMessage.trim() || !user || sending) return;
-    
-    setSending(true);
-    try {
-      const sentMessage = await MessageService.sendMessage(
-        conversationId,
-        'doctor',
-        newMessage.trim(),
-        user.id
-      );
-      
-      if (sentMessage) {
-        setMessages(prev => [...prev, sentMessage]);
-        setNewMessage('');
-      }
-    } catch (error) {
-      console.error('Error sending message:', error);
-    } finally {
-      setSending(false);
-    }
-  };
-  
-  const renderMessage = ({ item }: { item: Message }) => {
-    const isFromMe = item.sender_id === user?.id;
-    const isAssistant = item.role === 'assistant';
-    
+  if (!isAuthenticated) {
     return (
-      <View 
-        className={`mb-3 max-w-[80%] ${isFromMe ? 'self-end' : 'self-start'}`}
-      >
-        {/* Message bubble */}
-        <View
-          className={`rounded-2xl p-3 ${
-            isFromMe 
-              ? 'bg-emerald-500 rounded-tr-none' 
-              : isAssistant 
-                ? 'bg-gray-200 rounded-tl-none'
-                : 'bg-indigo-100 rounded-tl-none'
-          }`}
-        >
-          <Text 
-            className={`${
-              isFromMe ? 'text-white' : 'text-gray-800'
-            } font-rubik`}
-          >
-            {item.content}
-          </Text>
-        </View>
-        
-        {/* Timestamp */}
-        <Text className="text-gray-500 text-xs mt-1 font-rubik">
-          {isFromMe ? 'You' : isAssistant ? 'Assistant' : patient?.full_name} • {
-            new Date(item.created_at).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit'
-            })
-          }
-        </Text>
+      <View className="flex-1 justify-center items-center p-4">
+        <ActivityIndicator size="large" color="#10b981" />
+        <Text className="mt-4 text-gray-600 font-rubik">Checking authentication...</Text>
       </View>
     );
-  };
-
+  }
+  
   if (isLoading) {
     return (
-      <View className="flex-1 justify-center items-center bg-gray-50">
+      <View className="flex-1 justify-center items-center p-4">
         <ActivityIndicator size="large" color="#10b981" />
         <Text className="mt-4 text-gray-600 font-rubik">Loading conversation...</Text>
       </View>
     );
   }
-
-  return (
-    <KeyboardAvoidingView
-      className="flex-1 bg-gray-50"
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      <StatusBar style="light" />
-      
-      {/* Patient info header */}
-      <View className="bg-white border-b border-gray-200 py-3 px-4">
-        <View className="flex-row items-center">
-          <View className="h-10 w-10 rounded-full bg-indigo-100 items-center justify-center mr-3">
-            {patient?.avatar_url ? (
-              <Image 
-                source={{ uri: patient.avatar_url }} 
-                className="h-10 w-10 rounded-full" 
-              />
-            ) : (
-              <Text className="text-indigo-600 font-rubik-bold">
-                {patient?.full_name?.charAt(0) || 'P'}
-              </Text>
-            )}
-          </View>
-          <View className="flex-1">
-            <Text className="text-gray-800 font-rubik-medium">
-              {patient?.full_name || 'Patient'}
-            </Text>
-            <View className="flex-row items-center">
-              <View className="h-2 w-2 rounded-full bg-emerald-500 mr-1" />
-              <Text className="text-gray-500 text-xs font-rubik">
-                Medical Consultation
-              </Text>
-            </View>
-          </View>
-          <TouchableOpacity 
-            onPress={() => router.push({
-              pathname: '/(doctor)/patient-details',
-              params: { id: patient?.id }
-            })}
-            className="bg-gray-100 p-2 rounded-full"
-          >
-            <Ionicons name="information-circle-outline" size={22} color="#4b5563" />
-          </TouchableOpacity>
-        </View>
-      </View>
-      
-      {/* Messages */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={item => item.id}
-        contentContainerStyle={{ padding: 16 }}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-        onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
-      />
-      
-      {/* Bottom input bar */}
-      <View className="border-t border-gray-200 bg-white p-2 flex-row items-center">
-        <TextInput
-          className="flex-1 bg-gray-100 rounded-full px-4 py-2 mr-2 font-rubik"
-          placeholder="Type a message..."
-          value={newMessage}
-          onChangeText={setNewMessage}
-          multiline
-          maxLength={1000}
-        />
+  
+  if (error) {
+    return (
+      <View className="flex-1 justify-center items-center p-4">
+        <Text className="text-red-500 mb-4 font-rubik">{error}</Text>
         <TouchableOpacity
-          onPress={handleSendMessage}
-          disabled={!newMessage.trim() || sending}
-          className={`rounded-full p-2 ${
-            !newMessage.trim() || sending ? 'bg-gray-300' : 'bg-emerald-500'
-          }`}
+          className="bg-emerald-500 px-4 py-2 rounded-lg"
+          onPress={() => router.replace('/(doctor)/(tabs)/conversations')}
         >
-          {sending ? (
-            <ActivityIndicator size="small" color="#ffffff" />
-          ) : (
-            <Ionicons name="send" size={20} color="white" />
-          )}
+          <Text className="text-white font-rubik-medium">Back to Consultations</Text>
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+    );
+  }
+  
+  // Handle back navigation
+  const handleBack = () => {
+    console.log('Navigating back to conversations');
+    router.replace('/(doctor)/(tabs)/conversations');
+  };
+  
+  return (
+    <SafeAreaView className="flex-1 bg-white">
+      {/* Header */}
+      <LinearGradient
+        colors={['#10b981', '#0d9488']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        className="pt-12 pb-4 px-4"
+      >
+        <View className="flex-row items-center justify-between">
+          <TouchableOpacity
+            onPress={handleBack}
+            className="mr-3"
+          >
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+          
+          {patient ? (
+            <View className="flex-row items-center flex-1">
+              <View className="h-10 w-10 rounded-full bg-white items-center justify-center mr-3 ">
+                {patient.avatar_url ? (
+                  <Image 
+                    source={{ uri: patient.avatar_url }} 
+                    className="h-10 w-10 rounded-full" 
+                  />
+                ) : (
+                  <Text className="text-emerald-600 font-rubik-bold">
+                    {patient.full_name?.charAt(0) || 'P'}
+                  </Text>
+                )}
+              </View>
+              <View>
+                <Text className="text-lg font-rubik-bold text-white">
+                  {patient.full_name || 'Patient'}
+                </Text>
+                <View className="flex-row items-center">
+                  <View className="h-2 w-2 rounded-full bg-white mr-1" />
+                  <Text className="text-white text-xs font-rubik">
+                    {conversation?.status === 'active' ? 'Active Consultation' : 'Closed Consultation'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            // Default UI when patient profile not found
+            <View className="flex-row items-center flex-1">
+              <View className="h-10 w-10 rounded-full bg-white items-center justify-center mr-3">
+                <Text className="text-emerald-600 font-rubik-bold">P</Text>
+              </View>
+              <View>
+                <Text className="text-lg font-rubik-bold text-white">
+                  Patient
+                </Text>
+                <View className="flex-row items-center">
+                  <View className="h-2 w-2 rounded-full bg-white mr-1" />
+                  <Text className="text-white text-xs font-rubik">
+                    {conversation?.status === 'active' ? 'Active Consultation' : 'Closed Consultation'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+          
+          {conversation?.status === 'active' && (
+            <TouchableOpacity
+              onPress={handleCloseConversation}
+              className="bg-white/20 rounded-full p-2"
+            >
+              <Ionicons name="close-circle" size={22} color="white" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </LinearGradient>
+      
+      {/* Main content with KeyboardAvoidingView */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        className="flex-1"
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+      >
+        <View className="flex-1">
+          {/* Chat Interface */}
+          <ChatInterface
+            conversationId={conversation?.id}
+            initialMessages={messages}
+            onSendMessage={handleSendMessage}
+            isDoctor={true}
+            isDisabled={conversation?.status === 'closed'}
+          />
+        </View>
+        
+        {/* Bottom padding */}
+        <View className="h-10" />
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }

@@ -14,8 +14,9 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthProvider';
-import { ConversationService, ProfileService } from '@/lib/supabaseService';
+import { ConversationService, DoctorRequestService } from '@/lib/supabaseService';
 import { LinearGradient } from 'expo-linear-gradient';
+import { supabase } from '@/utils/supabase';
 
 export default function DoctorUserListScreen() {
   const router = useRouter();
@@ -23,67 +24,70 @@ export default function DoctorUserListScreen() {
   
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [users, setUsers] = useState([]);
+  const [approvedUsers, setApprovedUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   
   useEffect(() => {
     if (user) {
-      loadUsers();
+      loadApprovedUsers();
     }
   }, [user]);
 
   useEffect(() => {
     // Filter users based on search query
     if (searchQuery.trim() === '') {
-      setFilteredUsers(users);
+      setFilteredUsers(approvedUsers);
     } else {
       const query = searchQuery.toLowerCase();
-      const filtered = users.filter(user => 
-        user.full_name?.toLowerCase().includes(query)
+      const filtered = approvedUsers.filter(user => 
+        user.profiles?.full_name?.toLowerCase().includes(query)
       );
       setFilteredUsers(filtered);
     }
-  }, [searchQuery, users]);
+  }, [searchQuery, approvedUsers]);
   
-  const loadUsers = async () => {
+  const loadApprovedUsers = async () => {
     setIsLoading(true);
     try {
-      // Get all profiles with role 'user'
+      // Get all approved requests with user profiles
       const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'user');
+        .from('doctor_requests')
+        .select(`
+          *,
+          profiles:user_id (
+            id,
+            full_name,
+            avatar_url
+          ),
+          conversation:conversation_id (
+            id,
+            status
+          )
+        `)
+        .eq('status', 'approved');
       
       if (error) {
-        console.error('Error fetching users:', error);
+        console.error('Error fetching approved requests:', error);
         return;
       }
       
-      // Check if each user has had a conversation with the doctor
-      const usersWithConversationStatus = await Promise.all(
-        data.map(async (userData) => {
-          const { data: conversations } = await supabase
-            .from('conversations')
-            .select('id, status')
-            .eq('user_id', userData.id)
-            .eq('doctor_id', user.id)
-            .order('created_at', { ascending: false })
-            .limit(1);
-          
-          return {
-            ...userData,
-            hasConversation: conversations && conversations.length > 0,
-            conversationId: conversations?.[0]?.id,
-            conversationStatus: conversations?.[0]?.status
-          };
-        })
-      );
+      // Group by user_id to avoid duplicates
+      const userMap = {};
+      data.forEach(request => {
+        if (!userMap[request.user_id] || 
+            new Date(request.created_at) > new Date(userMap[request.user_id].created_at)) {
+          userMap[request.user_id] = request;
+        }
+      });
       
-      setUsers(usersWithConversationStatus);
-      setFilteredUsers(usersWithConversationStatus);
+      const approvedUsersList = Object.values(userMap);
+      console.log(`Found ${approvedUsersList.length} approved users`);
+      
+      setApprovedUsers(approvedUsersList);
+      setFilteredUsers(approvedUsersList);
     } catch (error) {
-      console.error('Error loading users:', error);
+      console.error('Error loading approved users:', error);
     } finally {
       setIsLoading(false);
       setRefreshing(false);
@@ -92,15 +96,28 @@ export default function DoctorUserListScreen() {
   
   const onRefresh = () => {
     setRefreshing(true);
-    loadUsers();
+    loadApprovedUsers();
   };
   
-  const startNewConversation = async (userId) => {
+  const startOrContinueConversation = async (item) => {
     try {
       setIsLoading(true);
       
-      // Create a new conversation
-      const conversation = await ConversationService.createConversation(userId, 'Doctor Consultation');
+      // Check if we already have an active conversation
+      if (item.conversation?.id && item.conversation?.status === 'active') {
+        // Navigate to existing conversation
+        router.push({
+          pathname: '/chat',
+          params: { conversationId: item.conversation.id }
+        });
+        return;
+      }
+      
+      // Create a new conversation if needed
+      const conversation = await ConversationService.createConversation(
+        item.user_id, 
+        'Doctor Consultation'
+      );
       
       if (conversation) {
         // Assign the doctor to this conversation
@@ -113,65 +130,53 @@ export default function DoctorUserListScreen() {
         });
       }
     } catch (error) {
-      console.error('Error starting conversation:', error);
+      console.error('Error with conversation:', error);
     } finally {
       setIsLoading(false);
     }
   };
   
   const renderUserItem = ({ item }) => {
+    const profile = item.profiles || {};
+    const hasActiveConversation = item.conversation?.status === 'active';
+    
     return (
       <TouchableOpacity
-        onPress={() => {
-          if (item.hasConversation && item.conversationStatus === 'active') {
-            // If existing active conversation exists, navigate to it
-            router.push({
-              pathname: '/chat',
-              params: { conversationId: item.conversationId }
-            });
-          } else {
-            // Start a new conversation
-            startNewConversation(item.id);
-          }
-        }}
+        onPress={() => startOrContinueConversation(item)}
         className="bg-white rounded-xl shadow-sm mb-4 overflow-hidden"
       >
         <View className="p-4">
           <View className="flex-row items-center">
             <View className="h-12 w-12 rounded-full bg-indigo-100 items-center justify-center mr-3">
-              {item.avatar_url ? (
+              {profile.avatar_url ? (
                 <Image 
-                  source={{ uri: item.avatar_url }} 
+                  source={{ uri: profile.avatar_url }} 
                   className="h-12 w-12 rounded-full" 
                 />
               ) : (
                 <Text className="text-indigo-600 font-rubik-bold">
-                  {item.full_name?.charAt(0) || 'U'}
+                  {profile.full_name?.charAt(0) || 'P'}
                 </Text>
               )}
             </View>
             
             <View className="flex-1">
               <Text className="text-gray-800 font-rubik-bold">
-                {item.full_name || 'User'}
+                {profile.full_name || 'Patient'}
               </Text>
               
               <View className="flex-row items-center mt-1">
-                {item.hasConversation ? (
-                  <View className={`rounded-full px-2 py-0.5 ${
-                    item.conversationStatus === 'active' ? 'bg-emerald-100' : 'bg-gray-100'
+                <View className={`rounded-full px-2 py-0.5 ${
+                  hasActiveConversation ? 'bg-emerald-100' : 'bg-amber-100'
+                }`}>
+                  <Text className={`text-xs font-rubik-medium ${
+                    hasActiveConversation ? 'text-emerald-800' : 'text-amber-800'
                   }`}>
-                    <Text className={`text-xs font-rubik-medium ${
-                      item.conversationStatus === 'active' ? 'text-emerald-800' : 'text-gray-800'
-                    }`}>
-                      {item.conversationStatus === 'active' ? 'Active conversation' : 'Previous consultation'}
-                    </Text>
-                  </View>
-                ) : (
-                  <Text className="text-gray-500 text-xs font-rubik">
-                    No previous consultations
+                    {hasActiveConversation 
+                      ? 'Active conversation' 
+                      : 'Approved - Start chat'}
                   </Text>
-                )}
+                </View>
               </View>
             </View>
             
@@ -200,13 +205,13 @@ export default function DoctorUserListScreen() {
           >
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
-          <Text className="text-2xl font-rubik-bold text-white">All Patients</Text>
+          <Text className="text-2xl font-rubik-bold text-white">Approved Patients</Text>
         </View>
         
         {/* Search bar */}
         <View className="flex-row bg-white/20 rounded-full p-1 mb-2">
           <TextInput
-            placeholder="Search patients..."
+            placeholder="Search approved patients..."
             placeholderTextColor="rgba(255, 255, 255, 0.7)"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -221,19 +226,25 @@ export default function DoctorUserListScreen() {
       {isLoading && !refreshing ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="#10b981" />
-          <Text className="mt-4 text-gray-600 font-rubik">Loading patients...</Text>
+          <Text className="mt-4 text-gray-600 font-rubik">Loading approved patients...</Text>
         </View>
       ) : filteredUsers.length === 0 ? (
         <View className="flex-1 items-center justify-center p-6">
           <Ionicons name="people" size={50} color="#9ca3af" />
           <Text className="text-xl text-gray-800 font-rubik-bold text-center mt-4 mb-2">
-            No patients found
+            No approved patients found
           </Text>
           <Text className="text-gray-500 text-center font-rubik">
             {searchQuery.trim() !== '' 
-              ? "No patients match your search criteria."
-              : "There are no patients available to chat with."}
+              ? "No approved patients match your search criteria."
+              : "You haven't approved any patient consultation requests yet."}
           </Text>
+          <TouchableOpacity
+            onPress={() => router.push('/requests')}
+            className="mt-6 bg-emerald-100 rounded-xl px-5 py-3"
+          >
+            <Text className="text-emerald-800 font-rubik-medium">View Pending Requests</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList

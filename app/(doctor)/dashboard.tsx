@@ -368,7 +368,7 @@ const handleAcceptRequest = async (requestId) => {
                 <TouchableOpacity 
                   key={conversation.id}
                   onPress={() => router.push({
-                    pathname: '/(tabs)/chat',
+                    pathname: '/(doctor)/chat',
                     params: { conversationId: conversation.id }
                   })}
                   className={`p-4 ${
