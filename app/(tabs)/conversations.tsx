@@ -1,5 +1,5 @@
 // app/(tabs)/conversations.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,8 +14,10 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthProvider';
 import { getUserConversations } from '@/lib/chatService';
+import { MessageService } from '@/lib/supabaseService';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
+import { setUnreadMessageCount } from '@/utils/notificationService';
 
 export default function ConversationsScreen() {
   const router = useRouter();
@@ -25,6 +27,7 @@ export default function ConversationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [conversations, setConversations] = useState([]);
   const [filter, setFilter] = useState('all'); // 'all', 'ai', 'doctor'
+  const [totalUnreadCount, setTotalUnreadCount] = useState(0);
   
   // Load conversations when screen comes into focus
   useFocusEffect(
@@ -32,6 +35,19 @@ export default function ConversationsScreen() {
       loadConversations();
     }, [user])
   );
+  
+  // Update total unread count whenever conversations change
+  useEffect(() => {
+    let count = 0;
+    conversations.forEach(convo => {
+      count += (convo.unreadCount || 0);
+    });
+    
+    setTotalUnreadCount(count);
+    
+    // Update app badge count
+    setUnreadMessageCount(count);
+  }, [conversations]);
   
   const loadConversations = async () => {
     if (!user) return;
@@ -60,6 +76,60 @@ export default function ConversationsScreen() {
   const handleRequestDoctor = () => {
     router.push('/request-doctor');
   };
+  
+  // Clear unread count and navigate to chat
+  const handleOpenConversation = useCallback(async (conversation) => {
+    try {
+      // First, update our local state immediately to hide unread indicators
+      // This ensures the indicators disappear before navigation
+      if (conversation.unreadCount > 0) {
+        // Create a new conversations array with this conversation's unread count set to 0
+        const updatedConversations = conversations.map(convo => 
+          convo.id === conversation.id 
+            ? { ...convo, unreadCount: 0 } 
+            : convo
+        );
+        
+        // Update state with new array
+        setConversations(updatedConversations);
+        
+        // Calculate new total unread count
+        const newTotalCount = updatedConversations.reduce(
+          (sum, convo) => sum + (convo.unreadCount || 0), 
+          0
+        );
+        
+        // Update total count
+        setTotalUnreadCount(newTotalCount);
+        
+        // Update app badge
+        setUnreadMessageCount(newTotalCount);
+        
+        // Now update the database
+        if (user) {
+          MessageService.markMessagesAsRead(conversation.id, user.id)
+            .catch(error => console.error('Error marking messages as read:', error));
+        }
+      }
+      
+      // Wait a tiny bit to allow state updates to propagate to UI
+      // This ensures the badge is hidden before navigation
+      setTimeout(() => {
+        // Navigate to the chat
+        router.push({
+          pathname: '/chat',
+          params: { conversationId: conversation.id }
+        });
+      }, 50);
+    } catch (error) {
+      console.error('Error opening conversation:', error);
+      // Still try to navigate even if there was an error
+      router.push({
+        pathname: '/chat',
+        params: { conversationId: conversation.id }
+      });
+    }
+  }, [conversations, user, router]);
   
   const filteredConversations = conversations.filter(convo => {
     if (filter === 'all') return true;
@@ -99,6 +169,7 @@ export default function ConversationsScreen() {
   const renderConversationItem = ({ item }) => {
     const isDoctor = item.is_doctor_chat;
     const lastMessage = item.lastMessage;
+    const hasUnread = item.unreadCount > 0;
     
     let subtitle = 'No messages yet';
     if (lastMessage) {
@@ -109,10 +180,7 @@ export default function ConversationsScreen() {
     
     return (
       <TouchableOpacity
-        onPress={() => router.push({
-          pathname: '/chat',
-          params: { conversationId: item.id }
-        })}
+        onPress={() => handleOpenConversation(item)}
         className="bg-white p-4 rounded-xl shadow-sm mb-3"
       >
         <View className="flex-row items-center">
@@ -150,7 +218,7 @@ export default function ConversationsScreen() {
                 {subtitle}
               </Text>
               
-              {item.unreadCount > 0 && (
+              {hasUnread && (
                 <View className="bg-indigo-600 h-5 min-w-5 rounded-full items-center justify-center px-1">
                   <Text className="text-white text-xs font-rubik-bold">
                     {item.unreadCount}
@@ -201,6 +269,13 @@ export default function ConversationsScreen() {
         <View className="flex-row justify-between items-center mb-4">
           <Text className="text-2xl font-rubik-bold text-white">Conversations</Text>
           <View className="flex-row">
+            {totalUnreadCount > 0 && (
+              <View className="bg-white rounded-full h-6 min-w-6 items-center justify-center px-1 mr-2">
+                <Text className="text-indigo-600 text-xs font-rubik-bold">
+                  {totalUnreadCount}
+                </Text>
+              </View>
+            )}
             <TouchableOpacity
               onPress={handleRequestDoctor}
               className="bg-white/20 p-2 rounded-full mr-2"
@@ -251,6 +326,7 @@ export default function ConversationsScreen() {
       ) : (
         <FlatList
           data={filteredConversations}
+          extraData={totalUnreadCount} // Add this to ensure FlatList re-renders when counts change
           renderItem={renderConversationItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: 16 }}

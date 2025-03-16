@@ -70,7 +70,7 @@ export default function DoctorChatScreen() {
           if (!conversationData) {
             console.log(`Conversation not found, may be a new conversation`);
             // This might happen for newly created conversations, redirect back to conversations
-            router.replace('/(doctor)/(tabs)/conversations');
+            router.replace('/(doctor)/conversations');
             return;
           }
           
@@ -102,7 +102,7 @@ export default function DoctorChatScreen() {
         } else {
           console.log('No conversationId provided, redirecting to conversations');
           // Redirect back to conversations list if no conversation ID
-          router.replace('/(doctor)/(tabs)/conversations');
+          router.replace('/(doctor)/conversations');
           return;
         }
       } catch (err) {
@@ -208,7 +208,7 @@ export default function DoctorChatScreen() {
         <Text className="text-red-500 mb-4 font-rubik">{error}</Text>
         <TouchableOpacity
           className="bg-emerald-500 px-4 py-2 rounded-lg"
-          onPress={() => router.replace('/(doctor)/(tabs)/conversations')}
+          onPress={() => router.replace('/(doctor)/conversations')}
         >
           <Text className="text-white font-rubik-medium">Back to Consultations</Text>
         </TouchableOpacity>
@@ -219,7 +219,7 @@ export default function DoctorChatScreen() {
   // Handle back navigation
   const handleBack = () => {
     console.log('Navigating back to conversations');
-    router.replace('/(doctor)/(tabs)/conversations');
+    router.replace('/(doctor)/conversations');
   };
   
   return (

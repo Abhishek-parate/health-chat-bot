@@ -1,5 +1,5 @@
 // app/(doctor)/conversations.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,9 +14,24 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthProvider';
-import { ConversationService, DoctorRequestService } from '@/lib/supabaseService';
+import { ConversationService, MessageService, DoctorRequestService } from '@/lib/supabaseService';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/utils/supabase';
+import { getProfileWithCache } from '@/utils/profileCacheService';
+import * as Notifications from 'expo-notifications';
+import { 
+  playMessageReceivedSound, 
+  setUnreadMessageCount 
+} from '@/utils/notificationService';
+
+// Configure notifications
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 export default function DoctorConversationsScreen() {
   const router = useRouter();
@@ -27,14 +42,145 @@ export default function DoctorConversationsScreen() {
   const [conversations, setConversations] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [filter, setFilter] = useState('active'); // 'active', 'closed', 'all'
+  const [totalUnread, setTotalUnread] = useState(0);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   
+  // Setup notifications
+  useEffect(() => {
+    const requestNotificationPermissions = async () => {
+      try {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        let finalStatus = existingStatus;
+        
+        if (existingStatus !== 'granted') {
+          const { status } = await Notifications.requestPermissionsAsync();
+          finalStatus = status;
+        }
+        
+        if (finalStatus === 'granted') {
+          console.log('Notification permissions granted');
+          setNotificationsEnabled(true);
+        } else {
+          console.log('Notification permissions denied');
+          setNotificationsEnabled(false);
+        }
+      } catch (error) {
+        console.error('Error requesting notification permissions:', error);
+      }
+    };
+    
+    requestNotificationPermissions();
+  }, []);
+  
+  // Load all data when user or filter changes
   useEffect(() => {
     if (user) {
       loadAllData();
     }
   }, [user, filter]); 
   
+  // Setup message subscription
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    console.log('Setting up message subscription for doctor:', user.id);
+    
+    // Subscribe to new messages for this doctor's conversations
+    const subscription = supabase
+      .channel('doctor-message-notifications')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `role=eq.user`, // Filter for messages from patients
+      }, async (payload) => {
+        try {
+          // Get the conversation info to check if it belongs to this doctor
+          const convoId = payload.new.conversation_id;
+          const convo = await ConversationService.getConversation(convoId);
+          
+          if (convo && convo.doctor_id === user.id) {
+            // This message is for this doctor
+            console.log('New message received for doctor in conversation:', convoId);
+            
+            // Play sound for new message
+            playMessageReceivedSound();
+            
+            // Get patient info for the notification
+            const patientProfile = await getProfileWithCache(convo.user_id);
+            const patientName = patientProfile?.full_name || 'Patient';
+            
+            // Update unread count
+            setTotalUnread(prev => {
+              const newCount = prev + 1;
+              // Update app badge count
+              setUnreadMessageCount(newCount);
+              return newCount;
+            });
+            
+            // Show notification if permissions are granted
+            if (notificationsEnabled) {
+              await Notifications.scheduleNotificationAsync({
+                content: {
+                  title: `New message from ${patientName}`,
+                  body: payload.new.content,
+                  data: { conversationId: convoId },
+                },
+                trigger: null, // Show immediately
+              });
+            }
+            
+            // Update the conversations list to show the new message
+            refreshConversationsWithNewMessage(convoId, payload.new);
+          }
+        } catch (error) {
+          console.error('Error handling new message:', error);
+        }
+      })
+      .subscribe();
+    
+    // Cleanup subscription
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [user?.id, notificationsEnabled]);
+  
+  // Update conversations when a new message is received
+  const refreshConversationsWithNewMessage = useCallback((conversationId, message) => {
+    setConversations(prev => {
+      // First check if the conversation exists in the current list
+      const existingConversation = prev.find(convo => convo.id === conversationId);
+      
+      if (existingConversation) {
+        // Update existing conversation
+        return prev.map(convo => {
+          if (convo.id === conversationId) {
+            return {
+              ...convo,
+              lastMessage: message,
+              unreadCount: (convo.unreadCount || 0) + 1,
+              updated_at: message.created_at // Update timestamp to move it to top
+            };
+          }
+          return convo;
+        }).sort((a, b) => {
+          // Sort to move the updated conversation to the top
+          const dateA = new Date(a.updated_at || a.created_at || 0);
+          const dateB = new Date(b.updated_at || b.created_at || 0);
+          return dateB - dateA;
+        });
+      } else {
+        // If conversation isn't in the list but should be (based on filter)
+        // We'll refresh the entire list
+        loadAllData();
+        return prev;
+      }
+    });
+  }, []);
+  
   const loadAllData = async () => {
+    if (!user?.id) return;
+    
     setIsLoading(true);
     try {
       // Get conversations, approved requests, and pending requests
@@ -46,10 +192,29 @@ export default function DoctorConversationsScreen() {
       
       // Combine approved requests with existing conversations
       const mergedData = mergeConversationsAndRequests(conversationsData, approvedRequestsData);
-      setConversations(mergedData);
+      
+      // Sort conversations by updated_at (most recent first)
+      const sortedConversations = mergedData.sort((a, b) => {
+        const dateA = new Date(a.updated_at || a.created_at || 0);
+        const dateB = new Date(b.updated_at || b.created_at || 0);
+        return dateB - dateA;
+      });
+      
+      setConversations(sortedConversations);
       
       // Set pending requests separately
       setPendingRequests(pendingRequestsData);
+      
+      // Calculate total unread messages
+      let unreadCount = 0;
+      sortedConversations.forEach(convo => {
+        unreadCount += (convo.unreadCount || 0);
+      });
+      setTotalUnread(unreadCount);
+      
+      // Update app badge count
+      setUnreadMessageCount(unreadCount);
+      
     } catch (error) {
       console.error('Error loading all data:', error);
     } finally {
@@ -59,11 +224,45 @@ export default function DoctorConversationsScreen() {
   };
   
   const loadConversations = async () => {
+    if (!user?.id) return [];
+    
     try {
       console.log("Loading doctor conversations");
-      const data = await ConversationService.getDoctorConversations(user.id);
-      console.log(`Retrieved ${data?.length || 0} doctor conversations`);
-      return data || [];
+      const conversationsData = await ConversationService.getDoctorConversations(user.id);
+      console.log(`Retrieved ${conversationsData?.length || 0} doctor conversations`);
+      
+      // Load unread message counts for each conversation
+      const conversationsWithUnread = await Promise.all(
+        conversationsData.map(async (convo) => {
+          try {
+            // Get unread messages for this conversation
+            const { count, messages } = await MessageService.getUnreadMessagesForConversation(
+              convo.id,
+              user.id
+            );
+            
+            // Get the last message for the conversation
+            const allMessages = await MessageService.getMessages(convo.id);
+            const lastMessage = allMessages.length > 0 ? allMessages[allMessages.length - 1] : null;
+            
+            // Add message count and last message to the conversation object
+            return {
+              ...convo,
+              unreadCount: count,
+              lastMessage
+            };
+          } catch (error) {
+            console.error(`Error loading unread messages for conversation ${convo.id}:`, error);
+            return {
+              ...convo,
+              unreadCount: 0,
+              lastMessage: null
+            };
+          }
+        })
+      );
+      
+      return conversationsWithUnread || [];
     } catch (error) {
       console.error('Error loading conversations:', error);
       return [];
@@ -118,6 +317,7 @@ export default function DoctorConversationsScreen() {
             requestId: request.id,
             requestReason: request.reason,
             lastMessage: null,
+            unreadCount: 0,
             hasConversation: true
           };
         } else {
@@ -134,6 +334,7 @@ export default function DoctorConversationsScreen() {
             patientId: request.user_id, // Store the patient ID for later use
             requestReason: request.reason,
             lastMessage: null,
+            unreadCount: 0,
             hasConversation: false
           };
         }
@@ -205,10 +406,10 @@ export default function DoctorConversationsScreen() {
     return Array.from(conversationMap.values());
   };
   
-  const onRefresh = () => {
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadAllData();
-  };
+  }, []);
   
   const handleCloseConversation = async (conversationId) => {
     try {
@@ -229,8 +430,8 @@ export default function DoctorConversationsScreen() {
     }
   };
   
-// Alternative implementation using the PostgreSQL function
-const startConversation = async (item) => {
+  // Start a new conversation with a patient
+  const startConversation = async (item) => {
     if (!item.patientId || !item.requestId) {
       console.error("Missing patient or request ID, cannot start conversation");
       Alert.alert("Error", "Cannot start conversation due to missing data");
@@ -310,17 +511,32 @@ const startConversation = async (item) => {
     }
   };
   
+  // Filter conversations based on selected filter
   const filteredConversations = conversations.filter(convo => {
     if (filter === 'all') return true;
     if (filter === 'active' && convo.status === 'pending_start') return true; // Include pending_start in active filter
     return convo.status === filter;
   });
   
-  // Fix for renderConversationItem function
-  const renderConversationItem = ({ item }) => {
-    // Debug the item structure to identify any issues
-    console.log(`Rendering item with ID: ${item?.id || 'unknown'}, status: ${item?.status}`);
-    
+  // Handle notification when clicked
+  const handleNotificationResponse = ({ notification }) => {
+    const conversationId = notification.request.content.data.conversationId;
+    if (conversationId) {
+      router.push({
+        pathname: '/(doctor)/chat',
+        params: { conversationId }
+      });
+    }
+  };
+  
+  // Setup notification response listener
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(handleNotificationResponse);
+    return () => subscription.remove();
+  }, []);
+  
+  // Memoize the renderConversationItem to optimize performance
+  const renderConversationItem = useCallback(({ item }) => {
     if (!item) {
       console.error("Received undefined item in renderConversationItem");
       return null;
@@ -351,6 +567,9 @@ const startConversation = async (item) => {
     // Check if this is a request without a conversation yet
     const isPendingStart = item.status === 'pending_start';
     
+    // Check if there are unread messages
+    const hasUnread = !isPendingStart && (item.unreadCount && item.unreadCount > 0);
+    
     // Handle the item press directly here without a separate function
     const onItemPress = () => {
       if (isPendingStart) {
@@ -369,7 +588,7 @@ const startConversation = async (item) => {
     return (
       <TouchableOpacity
         onPress={onItemPress}
-        className="bg-white rounded-xl shadow-sm mb-4 overflow-hidden"
+        className={`${hasUnread ? 'bg-emerald-50' : 'bg-white'} rounded-xl shadow-sm mb-4 overflow-hidden`}
       >
         <View className="p-4">
           <View className="flex-row items-center">
@@ -396,11 +615,11 @@ const startConversation = async (item) => {
               
               <View className="flex-row items-center justify-between mt-1">
                 <View className="flex-row items-center">
-                  {item.unreadCount > 0 && !isPendingStart && (
+                  {hasUnread && (
                     <View className="flex-row items-center mr-2">
                       <View className="h-2 w-2 bg-emerald-500 rounded-full mr-1" />
-                      <Text className="text-emerald-600 text-xs font-rubik">
-                        {item.unreadCount} new
+                      <Text className="text-emerald-600 text-xs font-rubik font-medium">
+                        {item.unreadCount} {item.unreadCount === 1 ? 'new message' : 'new messages'}
                       </Text>
                     </View>
                   )}
@@ -427,7 +646,7 @@ const startConversation = async (item) => {
           {/* Show last message or request reason if available */}
           <View className="mt-2 pl-15">
             {item.lastMessage ? (
-              <Text className="text-gray-600 font-rubik" numberOfLines={1}>
+              <Text className={`${hasUnread ? 'text-gray-800 font-rubik-medium' : 'text-gray-600 font-rubik'}`} numberOfLines={1}>
                 {item.lastMessage.content}
               </Text>
             ) : hasRequestInfo ? (
@@ -464,9 +683,8 @@ const startConversation = async (item) => {
         </View>
       </TouchableOpacity>
     );
-  };
+  }, []);
   
-  // Add this return statement
   return (
     <View className="flex-1 bg-gray-50">
       <StatusBar style="light" />
@@ -478,14 +696,25 @@ const startConversation = async (item) => {
         end={{ x: 1, y: 1 }}
         className="pt-12 pb-6 px-5"
       >
-        <View className="flex-row items-center mb-4">
-          <TouchableOpacity
-            onPress={() => router.back()}
-            className="mr-3"
-          >
-            <Ionicons name="arrow-back" size={24} color="white" />
-          </TouchableOpacity>
-          <Text className="text-2xl font-rubik-bold text-white">Consultations</Text>
+        <View className="flex-row items-center justify-between mb-4">
+          <View className="flex-row items-center">
+            <TouchableOpacity
+              onPress={() => router.back()}
+              className="mr-3"
+            >
+              <Ionicons name="arrow-back" size={24} color="white" />
+            </TouchableOpacity>
+            <Text className="text-2xl font-rubik-bold text-white">Consultations</Text>
+          </View>
+          
+          {/* Unread message count badge */}
+          {totalUnread > 0 && (
+            <View className="bg-white rounded-full px-2 py-1">
+              <Text className="text-emerald-600 font-rubik-bold text-xs">
+                {totalUnread} unread
+              </Text>
+            </View>
+          )}
         </View>
         
         {/* Filter tabs */}
@@ -512,6 +741,24 @@ const startConversation = async (item) => {
         </View>
       </LinearGradient>
       
+      {/* Pending requests notification */}
+      {pendingRequests.length > 0 && filter === 'active' && (
+        <TouchableOpacity
+          onPress={() => router.push('/(doctor)/requests')}
+          className="mx-4 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex-row items-center justify-between"
+        >
+          <View className="flex-row items-center">
+            <View className="bg-amber-200 rounded-full p-2 mr-2">
+              <Ionicons name="notifications" size={16} color="#B45309" />
+            </View>
+            <Text className="text-amber-800 font-rubik">
+              {pendingRequests.length} new consultation {pendingRequests.length === 1 ? 'request' : 'requests'}
+            </Text>
+          </View>
+          <Text className="text-amber-600 font-rubik-medium">View</Text>
+        </TouchableOpacity>
+      )}
+      
       {isLoading && !refreshing ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="#10b981" />
@@ -535,7 +782,7 @@ const startConversation = async (item) => {
         <FlatList
           data={filteredConversations}
           renderItem={renderConversationItem}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={{ padding: 16 }}
           refreshControl={
             <RefreshControl

@@ -8,8 +8,10 @@ import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
 
 import AuthProvider from '@/contexts/AuthProvider';
+import PatientChatNotification from '@/components/PatientChatNotification';
 import { initSounds } from '@/utils/notificationService';
 import '../global.css';
+import NotificationHandlerWrapper from '@/components/NotificationHandlerWrapper';
 
 // Prevent the splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
@@ -97,29 +99,33 @@ export default function RootLayout() {
     return <ErrorScreen message={error} />;
   }
 
-  // Wrap the app with the Supabase Auth Provider
+  // Wrap the app with the Supabase Auth Provider and PatientChatNotification
   return (
     <>
       <StatusBar style="auto" />
       <AuthProvider>
-        <Stack 
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: '#f8fafc' },
-            animation: 'slide_from_right',
-          }}
-        >
-          <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-          <Stack.Screen 
-            name="(auth)" 
-            options={{ 
-              animation: 'slide_from_bottom',
-              presentation: 'modal'
-            }} 
-          />
-          <Stack.Screen name="(doctor)" options={{ animation: 'fade' }} />
-        </Stack>
-      </AuthProvider>
+  <NotificationHandlerWrapper>
+    <PatientChatNotification>
+          <Stack 
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: '#f8fafc' },
+              animation: 'slide_from_right',
+            }}
+          >
+            <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+            <Stack.Screen 
+              name="(auth)" 
+              options={{ 
+                animation: 'slide_from_bottom',
+                presentation: 'modal'
+              }} 
+            />
+            <Stack.Screen name="(doctor)" options={{ animation: 'fade' }} />
+          </Stack>
+          </PatientChatNotification>
+  </NotificationHandlerWrapper>
+</AuthProvider>
     </>
   );
 }

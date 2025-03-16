@@ -50,6 +50,10 @@
         {
           "icon": "./assets/images/icon.png",
           "color": "#ffffff",
+          "notification": {
+            "icon": "./assets/images/notification-icon.png",
+            "color": "#10b981"
+          },
           "sounds": [
             "./assets/sounds/message-received.wav",
             "./assets/sounds/message-sent.wav"
