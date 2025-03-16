@@ -13,11 +13,11 @@ import {
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/contexts/AuthProvider';
 import { Ionicons } from '@expo/vector-icons';
-import { ChatInterface } from '@/components/chat/ChatInterface';
+import { ChatInterface } from '@/components/chat/ChatInterface'; // Using our optimized version
 import { ConversationService, MessageService } from '@/lib/supabaseService';
 import { LinearGradient } from 'expo-linear-gradient';
-import { supabase } from '@/utils/supabase';
 import { clearUnreadMessageCount } from '@/utils/notificationService';
+import { getProfileWithCache } from '@/utils/profileCacheService'; // Using cached profiles
 
 export default function DoctorChatScreen() {
   const router = useRouter();
@@ -80,31 +80,23 @@ export default function DoctorChatScreen() {
           // Load messages for this conversation
           const messagesData = await MessageService.getMessages(convoId);
           console.log(`Loaded ${messagesData.length} messages for conversation`);
-          setMessages(messagesData);
+          
+          // Filter out any potentially invalid messages
+          const validMessages = messagesData.filter(msg => msg && msg.content);
+          setMessages(validMessages);
           
           // Mark messages as read
           await MessageService.markMessagesAsRead(convoId, user.id);
           
-          // Load patient profile
+          // Load patient profile using cache
           if (conversationData.user_id) {
             console.log(`Loading patient profile for user ID: ${conversationData.user_id}`);
-            const { data, error } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', conversationData.user_id)
-              .maybeSingle();
-                
-            if (data) {
-              console.log(`Patient profile loaded successfully: ${data.full_name}`);
-              setPatient(data);
-            } else {
-              console.log('Patient profile not found, using default');
-              // Create a default patient object
-              setPatient({
-                id: conversationData.user_id,
-                full_name: 'Patient',
-                avatar_url: null
-              });
+            // Use cached profile service instead of direct Supabase query
+            const patientProfile = await getProfileWithCache(conversationData.user_id);
+            
+            if (patientProfile) {
+              console.log(`Patient profile loaded: ${patientProfile.full_name}`);
+              setPatient(patientProfile);
             }
           }
         } else {
@@ -142,8 +134,8 @@ export default function DoctorChatScreen() {
       
       if (sentMessage) {
         console.log('Message sent successfully');
-        // Update local messages state
-        setMessages(prev => [...prev, sentMessage]);
+        // Update local messages state - no need with the new component
+        // as it will be handled by the subscription
         return '';
       } else {
         throw new Error('Failed to send message');
@@ -174,7 +166,7 @@ export default function DoctorChatScreen() {
       
       if (success) {
         console.log('Conversation closed successfully');
-        // Optionally send a system message
+        // Send a system message
         await MessageService.sendMessage(
           conversation.id,
           'assistant',
@@ -311,7 +303,7 @@ export default function DoctorChatScreen() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
       >
         <View className="flex-1">
-          {/* Chat Interface */}
+          {/* Chat Interface - using our optimized version */}
           <ChatInterface
             conversationId={conversation?.id}
             initialMessages={messages}
