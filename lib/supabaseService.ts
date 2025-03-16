@@ -125,6 +125,156 @@ export const ProfileService = {
       }
     },
 
+    async updateProfile(
+        userId: string, 
+        profileData: Partial<Profile>
+      ): Promise<boolean> {
+        try {
+          console.log(`Updating profile for user ID: ${userId}`);
+          
+          // Add updated_at timestamp
+          const updates = {
+            ...profileData,
+            updated_at: new Date().toISOString()
+          };
+          
+          const { error } = await supabase
+            .from('profiles')
+            .update(updates)
+            .eq('id', userId);
+          
+          if (error) {
+            console.error('Error updating profile:', error);
+            return false;
+          }
+          
+          console.log('Profile updated successfully');
+          return true;
+        } catch (error) {
+          console.error('Exception in updateProfile:', error);
+          return false;
+        }
+      },
+      
+      /**
+       * Update user's avatar
+       */
+      async updateAvatar(
+        userId: string, 
+        avatarUrl: string | null
+      ): Promise<boolean> {
+        try {
+          console.log(`Updating avatar for user ID: ${userId}`);
+          
+          const { error } = await supabase
+            .from('profiles')
+            .update({
+              avatar_url: avatarUrl,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', userId);
+          
+          if (error) {
+            console.error('Error updating avatar:', error);
+            return false;
+          }
+          
+          console.log('Avatar updated successfully');
+          return true;
+        } catch (error) {
+          console.error('Exception in updateAvatar:', error);
+          return false;
+        }
+      },
+
+      async updatePhoneNumber(
+        userId: string, 
+        phoneNumber: string
+      ): Promise<boolean> {
+        try {
+          console.log(`Updating phone number for user ID: ${userId}`);
+          
+          const { error } = await supabase
+            .from('profiles')
+            .update({
+              phone_number: phoneNumber,
+              phone_verified: false, // Reset verification status
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', userId);
+          
+          if (error) {
+            console.error('Error updating phone number:', error);
+            return false;
+          }
+          
+          console.log('Phone number updated successfully');
+          return true;
+        } catch (error) {
+          console.error('Exception in updatePhoneNumber:', error);
+          return false;
+        }
+      },
+      
+      /**
+       * Mark user's phone number as verified
+       */
+      async verifyPhoneNumber(userId: string): Promise<boolean> {
+        try {
+          console.log(`Marking phone as verified for user ID: ${userId}`);
+          
+          const { error } = await supabase
+            .from('profiles')
+            .update({
+              phone_verified: true,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', userId);
+          
+          if (error) {
+            console.error('Error marking phone as verified:', error);
+            return false;
+          }
+          
+          console.log('Phone marked as verified successfully');
+          return true;
+        } catch (error) {
+          console.error('Exception in verifyPhoneNumber:', error);
+          return false;
+        }
+      },
+      
+      /**
+       * Update user's online status
+       */
+      async updateStatus(
+        userId: string, 
+        status: 'online' | 'offline' | 'busy'
+      ): Promise<boolean> {
+        try {
+          console.log(`Updating status to ${status} for user ID: ${userId}`);
+          
+          const { error } = await supabase
+            .from('profiles')
+            .update({
+              status,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', userId);
+          
+          if (error) {
+            console.error('Error updating status:', error);
+            return false;
+          }
+          
+          console.log('Status updated successfully');
+          return true;
+        } catch (error) {
+          console.error('Exception in updateStatus:', error);
+          return false;
+        }
+      },
+
 
     async getAvailableDoctors(): Promise<Profile[]> {
         try {
@@ -513,7 +663,7 @@ export const DoctorRequestService = {
     },
 
 
-    
+
 
     // Fix for DoctorRequestService getAllRequests method
 async getAllRequests(): Promise<any[]> { // Removed the stray 'f' character

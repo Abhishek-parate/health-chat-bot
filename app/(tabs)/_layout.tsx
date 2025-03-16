@@ -104,8 +104,6 @@ export default function TabsLayout() {
         }}
       />
       
-
-      
       <Tabs.Screen
         name="about"
         options={{
@@ -114,7 +112,15 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* Hidden screens */}
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ focused }) => <IonTabIcon focused={focused} name="person-outline" title="Profile" />,
+        }}
+      />
+
+      {/* Hidden screens - not shown in tab bar */}
       <Tabs.Screen
         name="chat/detail"
         options={{
@@ -123,14 +129,7 @@ export default function TabsLayout() {
       />
       
       <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ focused }) => <IonTabIcon focused={focused} name="person-outline" title="Profile" />,}}
-      />
-      
-      <Tabs.Screen
-        name="chat"
+        name="chat/index"
         options={{
           href: null, 
         }}
@@ -140,6 +139,30 @@ export default function TabsLayout() {
         name="request-doctor"
         options={{
           href: null, 
+        }}
+      />
+      
+      {/* Add edit-profile as a hidden screen */}
+      <Tabs.Screen
+        name="edit-profile"
+        options={{
+          href: null,
+        }}
+      />
+      
+      {/* Add doctor-request as a hidden screen */}
+      <Tabs.Screen
+        name="doctor-request"
+        options={{
+          href: null,
+        }}
+      />
+      
+      {/* Add health-topics as a hidden screen */}
+      <Tabs.Screen
+        name="health-topics"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

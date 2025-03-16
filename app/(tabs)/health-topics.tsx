@@ -389,21 +389,15 @@ export default function HealthTopicsScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
-      <StatusBar barStyle="light-content" />
+    <View className="flex-1 bg-gray-50">
+      <StatusBar style="light" />
       
       {/* Header */}
       <LinearGradient
         colors={['#4f46e5', '#7c3aed']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={{
-          paddingTop: 48,
-          paddingBottom: 24,
-          paddingHorizontal: 20,
-          borderBottomLeftRadius: 24,
-          borderBottomRightRadius: 24,
-        }}
+        className="pt-12 pb-6 px-5"
       >
         <View style={{ 
           flexDirection: 'row', 
@@ -412,6 +406,13 @@ export default function HealthTopicsScreen() {
           marginBottom: 16 
         }}>
           <View>
+                      <TouchableOpacity 
+                        onPress={() => router.back()}
+                        className="mr-3"
+                      >
+                        <Ionicons name="arrow-back" size={24} color="white" />
+                      </TouchableOpacity>
+                      
             <Text style={{ fontSize: 24, fontWeight: 'bold', color: 'white' }}>
               Health Topics
             </Text>
@@ -557,6 +558,7 @@ export default function HealthTopicsScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </SafeAreaView>
+
+    </View>
   );
 }
