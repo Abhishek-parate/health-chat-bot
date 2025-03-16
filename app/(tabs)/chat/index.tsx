@@ -1,4 +1,4 @@
-// app/(tabs)/chat/index.tsx - Updated for realtime chat
+// app/(tabs)/chat/index.tsx
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -17,24 +17,54 @@ import { ChatInterface } from '@/components/chat/ChatInterface';
 import { 
   createConversation, 
   getConversationMessages, 
-  sendMessageAndGetResponse,
-  ChatMessage
+  sendMessageAndGetResponse
 } from '@/lib/chatService';
 import { ConversationService, MessageService } from '@/lib/supabaseService';
 import { supabase } from '@/utils/supabase';
+import { playMessageSentSound, playMessageReceivedSound } from '@/utils/notificationService';
+import { getProfile } from '@/lib/profileService';
+
+// Define interfaces
+interface ChatMessage {
+  id: string | number;
+  content: string;
+  sender_type: 'user' | 'assistant' | 'doctor';
+  created_at: string;
+  is_read: boolean;
+  sender_id?: string;
+  attachment_url?: string;
+}
+
+interface Doctor {
+  id: string;
+  full_name: string;
+  avatar_url: string | null;
+  specialty?: string;
+  status?: 'online' | 'busy' | 'offline';
+}
+
+interface Conversation {
+  id: string | number;
+  user_id: string;
+  doctor_id?: string;
+  is_doctor_chat: boolean;
+  status: 'active' | 'closed';
+  created_at: string;
+  title?: string;
+}
 
 export default function ChatScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { user, isAuthenticated } = useAuth();
   
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [conversationId, setConversationId] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [isWithDoctor, setIsWithDoctor] = useState(false);
-  const [doctorInfo, setDoctorInfo] = useState(null);
-  const [conversation, setConversation] = useState(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | number | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isWithDoctor, setIsWithDoctor] = useState<boolean>(false);
+  const [doctorInfo, setDoctorInfo] = useState<Doctor | null>(null);
+  const [conversation, setConversation] = useState<Conversation | null>(null);
   
   // Initialize conversation on load
   useEffect(() => {
@@ -47,7 +77,7 @@ export default function ChatScreen() {
       try {
         // Check if conversationId was passed as a parameter
         if (params.conversationId) {
-          const convoId = params.conversationId;
+          const convoId = params.conversationId as string;
           setConversationId(convoId);
           
           // Get conversation details to check if it's a doctor chat
@@ -63,20 +93,30 @@ export default function ChatScreen() {
           if (conversationData.is_doctor_chat && conversationData.doctor_id) {
             setIsWithDoctor(true);
             
-            // Load doctor info
-            const { data: doctorData } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', conversationData.doctor_id)
-              .maybeSingle();
-              
-            if (doctorData) {
+            // Load doctor info using the profile service with caching
+            try {
+              const doctorData = await getProfile(conversationData.doctor_id);
               setDoctorInfo(doctorData);
+            } catch (error) {
+              console.error('Error loading doctor profile:', error);
+              // Create a fallback profile
+              setDoctorInfo({
+                id: conversationData.doctor_id,
+                full_name: 'Doctor',
+                status: 'offline',
+                avatar_url: null
+              });
             }
             
             // Load messages using MessageService for doctor chats
             const doctorMessages = await MessageService.getMessages(convoId);
-            setMessages(doctorMessages);
+            
+            // Validate the messages before setting
+            const validMessages = doctorMessages.filter(msg => 
+              msg && (msg.content || msg.attachment_url)
+            );
+            
+            setMessages(validMessages);
             
             // Mark messages as read
             await MessageService.markMessagesAsRead(convoId, user.id);
@@ -98,11 +138,11 @@ export default function ChatScreen() {
           
           // If topic was provided, send an initial message
           if (params.topic) {
-            const topic = params.topic;
+            const topic = params.topic as string;
             await handleSendMessage(`Tell me about ${topic}`);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error initializing chat:', err);
         setError('Failed to initialize chat. Please try again.');
       } finally {
@@ -114,7 +154,7 @@ export default function ChatScreen() {
   }, [isAuthenticated, user, params.conversationId, params.topic]);
   
   // Handle sending a message
-  const handleSendMessage = async (message) => {
+  const handleSendMessage = async (message: string): Promise<string> => {
     if (!conversationId || !message.trim()) {
       return "Could not process your message. Please try again.";
     }
@@ -133,6 +173,9 @@ export default function ChatScreen() {
           throw new Error('Failed to send message to doctor');
         }
         
+        // Play sound when message is sent
+        playMessageSentSound();
+        
         return '';
       } else {
         // If it's an AI chat, use chatService
@@ -140,6 +183,9 @@ export default function ChatScreen() {
           conversationId,
           message
         );
+        
+        // Play sound when message is sent
+        playMessageSentSound();
         
         // If we got a valid AI message, return its content
         if (aiMessage) {
@@ -150,12 +196,17 @@ export default function ChatScreen() {
             aiMessage
           ]);
           
+          // Play sound when AI responds
+          setTimeout(() => {
+            playMessageReceivedSound();
+          }, 500); // Small delay so the sounds don't overlap
+          
           return '';
         } else {
           throw new Error('Failed to get AI response');
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in handleSendMessage:', error);
       return "Sorry, I couldn't process your request. Please try again.";
     }
@@ -270,14 +321,16 @@ export default function ChatScreen() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {/* Chat Interface with realtime messaging */}
-        <ChatInterface
-          conversationId={conversationId || undefined}
-          initialMessages={messages}
-          onSendMessage={handleSendMessage}
-          isDoctor={false}
-          isDisabled={isWithDoctor && conversation?.status === 'closed'}
-          userId={user.id} // Pass user ID for realtime subscription
-        />
+        {conversationId && user && (
+          <ChatInterface
+            conversationId={conversationId}
+            initialMessages={messages}
+            onSendMessage={handleSendMessage}
+            isDoctor={false}
+            isDisabled={isWithDoctor && conversation?.status === 'closed'}
+            userId={user.id}
+          />
+        )}
         
         {/* Bottom padding */}
         <View className="h-8" />

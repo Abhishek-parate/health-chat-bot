@@ -1,207 +1,247 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, FlatList, KeyboardAvoidingView, Platform, TextInput, TouchableOpacity } from 'react-native';
+// components/chat/ChatInterface.tsx
+import React, { useState, useRef, useEffect, memo } from 'react';
+import { 
+  View, 
+  ScrollView,
+  TextInput, 
+  TouchableOpacity, 
+  ActivityIndicator,
+  Text
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MessageBubble from './ui/MessageBubble';
-import { getChatCompletion } from '../lib/groq';
-import { executeQuery } from '../lib/db';
-import { useAuth } from '@clerk/clerk-expo';
+import { supabase } from '@/utils/supabase';
+import { playMessageSentSound, playMessageReceivedSound } from '@/utils/notificationService';
 
-type Message = {
-  id: string;
-  content: string;
-  isUser: boolean;
-  timestamp: Date;
-};
+// Import or define your MessageBubble component
+const MessageBubble = memo(({ message = '', isUser = false, timestamp = new Date() }) => {
+  return (
+    <View className={`max-w-3/4 mb-4 ${isUser ? 'items-end self-end' : 'items-start self-start'}`}>
+      <View className={`px-4 py-2 ${isUser ? 'bg-blue-500 rounded-xl rounded-tr-none' : 'bg-gray-100 rounded-xl rounded-tl-none'}`}>
+        <Text className={`${isUser ? 'text-white' : 'text-gray-800'} font-rubik`}>{message}</Text>
+        <Text className={`${isUser ? 'text-blue-200' : 'text-gray-500'} text-xs mt-1 font-rubik`}>{
+          timestamp instanceof Date ? timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Unknown time'
+        }</Text>
+      </View>
+    </View>
+  );
+});
 
-type ChatInterfaceProps = {
-  conversationId?: number;
-};
+// Define props interface
+interface ChatInterfaceProps {
+  conversationId?: string | number;
+  initialMessages?: any[];
+  onSendMessage: (message: string) => Promise<string>;
+  isDoctor?: boolean;
+  isDisabled?: boolean;
+  userId: string;
+  isActive?: boolean;
+}
 
-export default function ChatInterface({ conversationId }: ChatInterfaceProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [inputMessage, setInputMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
-  const { userId } = useAuth();
+export const ChatInterface: React.FC<ChatInterfaceProps> = ({
+  conversationId,
+  initialMessages = [],
+  onSendMessage,
+  isDoctor = false,
+  isDisabled = false,
+  userId,
+  isActive = true
+}) => {
+  const [messages, setMessages] = useState<any[]>(initialMessages);
+  const [inputMessage, setInputMessage] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const scrollViewRef = useRef<ScrollView | null>(null);
+  const subscription = useRef<any>(null);
 
-  // Load messages when conversation ID changes
+  // Set up realtime subscription for new messages
   useEffect(() => {
     if (conversationId) {
-      loadMessages();
-    } else {
-      // Welcome message for new conversation
-      setMessages([
-        {
-          id: 'welcome',
-          content: "Hello! I'm your health assistant. How can I help you today?",
-          isUser: false,
-          timestamp: new Date(),
-        },
-      ]);
-    }
-  }, [conversationId]);
-
-  const loadMessages = async () => {
-    try {
-      const result = await executeQuery(
-        `SELECT id, content, is_user, created_at FROM messages 
-         WHERE conversation_id = $1 
-         ORDER BY created_at ASC`,
-        [conversationId]
-      );
-
-      const loadedMessages = result.map((msg: any) => ({
-        id: msg.id.toString(),
-        content: msg.content,
-        isUser: msg.is_user,
-        timestamp: new Date(msg.created_at),
-      }));
-
-      setMessages(loadedMessages);
-    } catch (error) {
-      console.error('Error loading messages:', error);
-    }
-  };
-
-  const saveMessage = async (content: string, isUser: boolean) => {
-    try {
-      let activeConversationId = conversationId;
-
-      // Create a new conversation if needed
-      if (!activeConversationId) {
-        const title = content.substring(0, 50) + (content.length > 50 ? '...' : '');
-        const conversationResult = await executeQuery(
-          `INSERT INTO conversations (user_id, title) 
-           VALUES ($1, $2) 
-           RETURNING id`,
-          [userId, title]
-        );
-        activeConversationId = conversationResult[0].id;
-      }
-
-      // Save the message
-      const result = await executeQuery(
-        `INSERT INTO messages (conversation_id, content, is_user) 
-         VALUES ($1, $2, $3) 
-         RETURNING id, created_at`,
-        [activeConversationId, content, isUser]
-      );
-
-      return {
-        id: result[0].id.toString(),
-        conversationId: activeConversationId,
-        timestamp: new Date(result[0].created_at),
+      // Subscribe to new messages for this conversation
+      const messageSubscription = supabase
+        .channel(`conversation:${conversationId}`)
+        .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`
+        }, (payload) => {
+          // Add new message to the list
+          if (payload.new) {
+            const newMessage = payload.new;
+            
+            // Only add message if it's not from the current user
+            const isMine = newMessage.sender_id === userId;
+            
+            // Add message to the list if not already there
+            setMessages(prev => {
+              // Check if message already exists in our list
+              const exists = prev.some(msg => msg.id === newMessage.id);
+              if (!exists) {
+                // Play sound for new message if it's not mine and app is active
+                if (!isMine && isActive) {
+                  playMessageReceivedSound();
+                }
+                return [...prev, newMessage];
+              }
+              return prev;
+            });
+          }
+        })
+        .subscribe();
+      
+      subscription.current = messageSubscription;
+      
+      // Cleanup subscription on unmount
+      return () => {
+        if (subscription.current) {
+          supabase.removeChannel(subscription.current);
+        }
       };
-    } catch (error) {
-      console.error('Error saving message:', error);
-      throw error;
     }
-  };
+  }, [conversationId, userId, isActive]);
 
-  const sendMessage = async () => {
-    if (!inputMessage.trim() || isLoading) return;
+  // Scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (scrollViewRef.current && messages.length > 0) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [messages]);
+
+  // Handle sending a message
+  const handleSendMessage = async (): Promise<void> => {
+    if (!inputMessage.trim() || isLoading || isDisabled) return;
     
-    setIsLoading(true);
-    const userMessageText = inputMessage.trim();
+    const messageText = inputMessage.trim();
     setInputMessage('');
+    setIsLoading(true);
     
     try {
-      // Add user message to UI
-      const tempUserId = Date.now().toString();
-      const tempUserMessage = {
-        id: tempUserId,
-        content: userMessageText,
-        isUser: true,
-        timestamp: new Date(),
+      // Play sound when sending message
+      playMessageSentSound();
+      
+      // Add optimistic message
+      const tempId = `temp-${Date.now()}`;
+      const tempMessage = {
+        id: tempId,
+        content: messageText,
+        sender_type: isDoctor ? 'doctor' : 'user',
+        role: isDoctor ? 'doctor' : 'user', // Add both for consistency
+        created_at: new Date().toISOString(),
+        is_read: true,
+        sender_id: userId
       };
-      setMessages(prev => [...prev, tempUserMessage]);
-
-      // Save user message to database
-      const savedUserMessage = await saveMessage(userMessageText, true);
       
-      // Format messages for AI
-      const messageHistory = messages.map(msg => ({
-        role: msg.isUser ? 'user' : 'assistant',
-        content: msg.content,
-      }));
-
-      // Add current message
-      messageHistory.push({ role: 'user', content: userMessageText });
-
-      // Get AI response
-      const aiResponse = await getChatCompletion(messageHistory);
+      setMessages(prev => [...prev, tempMessage]);
       
-      if (aiResponse && aiResponse.content) {
-        // Save AI response to database
-        const savedAiMessage = await saveMessage(aiResponse.content, false);
-        
-        // Add AI response to UI
-        setMessages(prev => [
-          ...prev.map(msg => msg.id === tempUserId ? 
-            { ...msg, id: savedUserMessage.id.toString() } : msg),
-          {
-            id: savedAiMessage.id.toString(),
-            content: aiResponse.content,
-            isUser: false,
-            timestamp: savedAiMessage.timestamp,
-          },
-        ]);
+      // Send message through the parent component
+      const error = await onSendMessage(messageText);
+      
+      if (error) {
+        console.error('Error sending message:', error);
+        // Show error by replacing the temp message
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === tempId 
+              ? {...msg, content: 'Failed to send message', error: true} 
+              : msg
+          )
+        );
       }
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error('Error in handleSendMessage:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    if (messages.length > 0 && flatListRef.current) {
-      flatListRef.current.scrollToEnd({ animated: true });
-    }
-  }, [messages]);
+  // Handle input change
+  const handleInputChange = (text: string): void => {
+    setInputMessage(text);
+  };
+
+  // Render messages with safe error handling
+  const renderMessages = () => {
+    return messages
+      .filter(msg => msg && msg.content) // Filter out invalid messages
+      .map(item => {
+        try {
+          const senderType = item.sender_type || item.role || 'unknown';
+          const isUser = senderType === 'user';
+          const isCurrentUser = isDoctor ? !isUser : isUser;
+          
+          return (
+            <MessageBubble
+              key={item.id.toString()}
+              message={item.content || ''}
+              isUser={isCurrentUser}
+              timestamp={new Date(item.created_at || new Date())}
+            />
+          );
+        } catch (error) {
+          console.error('Error rendering message item:', error);
+          return null;
+        }
+      });
+  };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      className="flex-1"
-    >
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <MessageBubble
-            message={item.content}
-            isUser={item.isUser}
-            timestamp={item.timestamp}
-          />
+    <View className="flex-1 bg-white">
+      <ScrollView
+        ref={scrollViewRef}
+        className="flex-1"
+        contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+      >
+        {messages.length === 0 ? (
+          <View className="flex items-center justify-center py-10">
+            <Text className="text-gray-500 font-rubik">No messages yet</Text>
+          </View>
+        ) : (
+          renderMessages()
         )}
-        contentContainerStyle={{ padding: 16 }}
-      />
+      </ScrollView>
       
-      <View className="flex-row items-center p-2 border-t border-gray-200 bg-white">
-        <TextInput
-          className="flex-1 bg-gray-100 rounded-full px-4 py-2 mr-2"
-          placeholder="Type your message..."
-          value={inputMessage}
-          onChangeText={setInputMessage}
-          multiline
-        />
-        <TouchableOpacity
-          onPress={sendMessage}
-          disabled={isLoading || !inputMessage.trim()}
-          className={`rounded-full p-2 ${
-            isLoading || !inputMessage.trim() ? 'bg-gray-300' : 'bg-primary'
-          }`}
-        >
-          <Ionicons
-            name="send"
-            size={24}
-            color={isLoading || !inputMessage.trim() ? '#666' : 'white'}
-          />
-        </TouchableOpacity>
+      <View className="border-t border-gray-200 px-4 py-2 bg-white">
+        {isDisabled ? (
+          <View className="bg-gray-100 rounded-lg p-3 items-center">
+            <Text className="text-gray-500 font-rubik-medium">
+              This conversation has been closed
+            </Text>
+          </View>
+        ) : (
+          <View className="flex-row items-center">
+            <TextInput
+              className="flex-1 bg-gray-100 rounded-full px-4 py-2 mr-2 min-h-10 max-h-24 font-rubik"
+              placeholder="Type a message..."
+              value={inputMessage}
+              onChangeText={handleInputChange}
+              multiline={true}
+              editable={!isDisabled}
+            />
+            
+            <TouchableOpacity
+              onPress={handleSendMessage}
+              disabled={isLoading || !inputMessage.trim() || isDisabled}
+              className={`rounded-full p-2 ${
+                isLoading || !inputMessage.trim() || isDisabled
+                  ? 'bg-gray-300'
+                  : isDoctor
+                    ? 'bg-emerald-500'
+                    : 'bg-blue-500'
+              }`}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="send" size={18} color="#fff" />
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
-}
+};
+
+export default ChatInterface;

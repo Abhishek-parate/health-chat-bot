@@ -1,223 +1,425 @@
-// components/chat/ChatInterface.tsx
+// components/chat/ChatInterface.tsx - Optimized implementation
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  View,
+import { 
+  View, 
+  ScrollView,
+  TextInput, 
+  TouchableOpacity, 
+  ActivityIndicator,
   Text,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator
+  StyleSheet,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
+import { playMessageSentSound, playMessageReceivedSound } from '@/utils/notificationService';
+import { Message } from '@/lib/supabaseService';
 
-export function ChatInterface({
+// Simple Message Bubble component (replace with your own if needed)
+const MessageBubble = React.memo(({ 
+  message, 
+  isUser, 
+  timestamp,
+  isError
+}: { 
+  message: string; 
+  isUser: boolean; 
+  timestamp: Date;
+  isError?: boolean;
+}) => {
+  // Format time as HH:MM
+  const timeString = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  
+  return (
+    <View style={[
+      styles.messageBubbleContainer,
+      isUser ? styles.userMessageContainer : styles.otherMessageContainer
+    ]}>
+      <View style={[
+        styles.messageBubble,
+        isUser 
+          ? (isError ? styles.errorBubble : styles.userBubble) 
+          : styles.otherBubble
+      ]}>
+        <Text style={[
+          styles.messageText,
+          isUser 
+            ? (isError ? styles.errorText : styles.userText) 
+            : styles.otherText
+        ]}>
+          {message}
+        </Text>
+        <Text style={[
+          styles.timeText,
+          isUser 
+            ? (isError ? styles.errorTimeText : styles.userTimeText) 
+            : styles.otherTimeText
+        ]}>
+          {timeString}
+        </Text>
+      </View>
+    </View>
+  );
+});
+
+// Define the Chat Interface Props
+interface ChatInterfaceProps {
+  conversationId?: string | number;
+  initialMessages?: any[];
+  onSendMessage: (message: string) => Promise<string>;
+  isDoctor?: boolean;
+  isDisabled?: boolean;
+  userId: string;
+  isActive?: boolean;
+}
+
+export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   conversationId,
   initialMessages = [],
   onSendMessage,
   isDoctor = false,
   isDisabled = false,
-  userId // Add userId prop to track current user
-}) {
-  const [message, setMessage] = useState('');
-  const [messages, setMessages] = useState(initialMessages);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const scrollRef = useRef(null);
+  userId,
+  isActive = true
+}) => {
+  const [messages, setMessages] = useState<any[]>(initialMessages);
+  const [inputMessage, setInputMessage] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const scrollViewRef = useRef<ScrollView | null>(null);
+  const subscription = useRef<any>(null);
 
-  // Update messages when initialMessages changes
+  // Set up realtime subscription for new messages
   useEffect(() => {
-    if (initialMessages?.length > 0) {
-      setMessages(initialMessages);
-    }
-  }, [initialMessages]);
-
-  // Set up realtime subscription to messages
-  useEffect(() => {
-    if (!conversationId) return;
-
-    // Create a channel for this specific conversation's messages
-    const messageChannel = supabase
-      .channel(`messages:${conversationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`
-        },
-        payload => {
-          console.log('Received new message:', payload);
-          // Only add messages that aren't from the current user (to avoid duplicates)
-          // or messages that don't already exist in our local state
-          const newMessage = payload.new;
-          
-          if (newMessage.sender_id !== userId) {
-            // Check if this message already exists in our local state
-            const messageExists = messages.some(m => m.id === newMessage.id);
-            
-            if (!messageExists) {
-              setMessages(prevMessages => [...prevMessages, newMessage]);
+    if (conversationId) {
+      try {
+        // Subscribe to new messages for this conversation
+        const messageSubscription = supabase
+          .channel(`conversation:${conversationId}`)
+          .on('postgres_changes', { 
+            event: 'INSERT', 
+            schema: 'public', 
+            table: 'messages',
+            filter: `conversation_id=eq.${conversationId}`
+          }, (payload) => {
+            // Add new message to the list
+            if (payload.new) {
+              const newMessage = payload.new;
+              
+              // Only add message if it's not from the current user
+              const isMine = newMessage.sender_id === userId;
+              
+              // Add message to the list if not already there
+              setMessages(prev => {
+                // Check if message already exists in our list
+                const exists = prev.some(msg => msg.id === newMessage.id);
+                if (!exists) {
+                  // Play sound for new message if it's not mine and app is active
+                  if (!isMine && isActive) {
+                    playMessageReceivedSound();
+                  }
+                  return [...prev, newMessage];
+                }
+                return prev;
+              });
             }
+          })
+          .subscribe();
+        
+        subscription.current = messageSubscription;
+      } catch (err) {
+        console.error('Error setting up message subscription:', err);
+      }
+      
+      // Cleanup subscription on unmount
+      return () => {
+        if (subscription.current) {
+          try {
+            supabase.removeChannel(subscription.current);
+          } catch (err) {
+            console.error('Error removing channel:', err);
           }
         }
-      )
-      .subscribe();
+      };
+    }
+  }, [conversationId, userId, isActive]);
 
-    // Clean up subscription on unmount
-    return () => {
-      supabase.removeChannel(messageChannel);
-    };
-  }, [conversationId, messages, userId]);
+  // Scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (scrollViewRef.current && messages.length > 0) {
+      setTimeout(() => {
+        if (scrollViewRef.current) {
+          scrollViewRef.current.scrollToEnd({ animated: true });
+        }
+      }, 100);
+    }
+  }, [messages]);
 
-  const handleSend = async () => {
-    if (!message.trim() || isProcessing || isDisabled) return;
+  // Handle sending a message
+  const handleSendMessage = async (): Promise<void> => {
+    if (!inputMessage.trim() || isLoading || isDisabled) return;
     
-    const userMessage = message;
-    setMessage('');
-    setIsProcessing(true);
-
+    const messageText = inputMessage.trim();
+    setInputMessage('');
+    setIsLoading(true);
+    
     try {
-      // Add user's message to the list immediately (optimistic UI)
-      const newUserMessage = {
-        id: Date.now().toString(), // Temporary ID
-        role: isDoctor ? 'doctor' : 'user',
-        content: userMessage,
-        timestamp: new Date().toISOString(),
-        sender_id: userId,
-        conversation_id: conversationId,
-        is_read: false
+      // Play sound when sending message
+      playMessageSentSound();
+      
+      // Add optimistic message
+      const tempId = `temp-${Date.now()}`;
+      const tempMessage = {
+        id: tempId,
+        content: messageText,
+        sender_type: isDoctor ? 'doctor' : 'user',
+        role: isDoctor ? 'doctor' : 'user', // Add both for consistency
+        created_at: new Date().toISOString(),
+        is_read: true,
+        sender_id: userId
       };
       
-      // We don't need to update local state here since the message will come back from the subscription
-      // But sometimes for smoother UX we can show it immediately, then let the subscription update it
-      // with the real database ID once it's inserted
+      setMessages(prev => [...prev, tempMessage]);
       
-      // Wait for response from onSendMessage callback
-      await onSendMessage(userMessage);
+      // Send message through the parent component
+      const error = await onSendMessage(messageText);
+      
+      if (error) {
+        console.error('Error sending message:', error);
+        // Show error by replacing the temp message
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === tempId 
+              ? {...msg, content: 'Failed to send message', error: true} 
+              : msg
+          )
+        );
+      }
     } catch (error) {
-      console.error('Error sending message:', error);
-      // If there's an error, we might want to show a retry button or similar UI
+      console.error('Error in handleSendMessage:', error);
     } finally {
-      setIsProcessing(false);
+      setIsLoading(false);
     }
   };
 
-  const renderMessage = ({ item }) => {
-    const isUserMessage = item.role === 'user';
-    const isDoctorMessage = item.role === 'doctor';
-    const isAssistantMessage = item.role === 'assistant';
-    
-    // Is this message from the current user?
-    const isFromCurrentUser = item.sender_id === userId;
-    
-    // For styling purposes
-    let bgColor, textColor, alignment, borderRadius;
+  // Handle input change
+  const handleInputChange = (text: string): void => {
+    setInputMessage(text);
+  };
 
-    // Set styles based on message role and current user role
-    if ((isDoctor && isDoctorMessage) || (!isDoctor && isUserMessage)) {
-      // Messages sent by the current user (doctor sends doctor messages, user sends user messages)
-      bgColor = isDoctor ? 'bg-emerald-500' : 'bg-blue-500';
-      textColor = 'text-white';
-      alignment = 'self-end';
-      borderRadius = 'rounded-2xl rounded-br-md';
-    } else if ((isDoctor && isUserMessage) || (!isDoctor && isDoctorMessage)) {
-      // Messages received by the current user (doctor receives user messages, user receives doctor messages)
-      bgColor = isDoctor ? 'bg-blue-100' : 'bg-emerald-500';
-      textColor = isDoctor ? 'text-gray-800' : 'text-white';
-      alignment = 'self-start';
-      borderRadius = 'rounded-2xl rounded-bl-md';
-    } else {
-      // Assistant messages
-      bgColor = 'bg-gray-200';
-      textColor = 'text-gray-800';
-      alignment = 'self-start';
-      borderRadius = 'rounded-2xl rounded-bl-md';
-    }
-
-    return (
-      <View className={`mb-3 max-w-[85%] ${alignment}`}>
-        {isDoctorMessage && !isDoctor && (
-          <Text className="text-emerald-700 text-xs font-rubik-medium ml-2 mb-1">
-            Doctor
-          </Text>
-        )}
-        
-        {isUserMessage && isDoctor && (
-          <Text className="text-blue-700 text-xs font-rubik-medium ml-2 mb-1">
-            Patient
-          </Text>
-        )}
-        
-        <View className={`${bgColor} ${borderRadius} px-4 py-3`}>
-          <Text className={`${textColor} font-rubik`}>{item.content}</Text>
+  // Render messages safely with direct manual approach
+  const renderMessages = () => {
+    // Filter out invalid messages
+    const validMessages = messages.filter(msg => msg && msg.content);
+    
+    if (validMessages.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No messages yet</Text>
         </View>
-        
-        <Text className={`text-gray-500 text-xs font-rubik ${isFromCurrentUser ? 'text-right mr-2' : 'ml-2'} mt-1`}>
-          {new Date(item.timestamp || item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </Text>
-      </View>
-    );
-  };
-
-  // Scroll to bottom when new messages come in
-  useEffect(() => {
-    if (scrollRef.current && messages.length > 0) {
-      scrollRef.current.scrollToEnd({ animated: true });
+      );
     }
-  }, [messages.length]);
+    
+    return validMessages.map(item => {
+      try {
+        // Handle different message format structures
+        const senderType = item.sender_type || item.role || 'unknown';
+        const isUser = senderType === 'user';
+        const isCurrentUser = isDoctor ? !isUser : isUser;
+        
+        return (
+          <MessageBubble 
+            key={item.id.toString()} 
+            message={item.content} 
+            isUser={isCurrentUser}
+            timestamp={new Date(item.created_at || new Date())}
+            isError={!!item.error}
+          />
+        );
+      } catch (error) {
+        console.error('Error rendering message:', error);
+        return null; // Skip rendering this message
+      }
+    });
+  };
 
   return (
-    <View className="flex-1">
-      <FlatList
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={(item) => item.id || `${item.role}-${item.created_at || Date.now()}`}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 16, paddingBottom: 80 }}
-        inverted={false}
-        ref={scrollRef}
-        onContentSizeChange={() => {
-          if (scrollRef.current && messages.length > 0) {
-            scrollRef.current.scrollToEnd({ animated: true });
-          }
-        }}
-      />
+    <View style={styles.container}>
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+      >
+        {renderMessages()}
+      </ScrollView>
       
-      <View className="absolute bottom-0 left-0 right-0 border-t border-gray-200 bg-white p-2">
-        <View className="flex-row items-center">
-          <TextInput
-            placeholder={isDisabled ? "Chat is closed" : 
-              isDoctor ? "Type your medical advice..." : "Type your health concern..."}
-            value={message}
-            onChangeText={setMessage}
-            className="flex-1 bg-gray-100 rounded-full px-4 py-2 mr-2 font-rubik"
-            multiline
-            editable={!isDisabled}
-          />
-          
-          <TouchableOpacity
-            onPress={handleSend}
-            disabled={!message.trim() || isProcessing || isDisabled}
-            className={`rounded-full p-2 ${
-              !message.trim() || isProcessing || isDisabled
-                ? 'bg-gray-300'
-                : isDoctor ? 'bg-emerald-500' : 'bg-blue-500'
-            }`}
-          >
-            {isProcessing ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Ionicons 
-                name="send" 
-                size={18} 
-                color="white" 
-              />
-            )}
-          </TouchableOpacity>
-        </View>
+      <View style={styles.inputContainer}>
+        {isDisabled ? (
+          <View style={styles.disabledContainer}>
+            <Text style={styles.disabledText}>
+              This conversation has been closed
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Type a message..."
+              value={inputMessage}
+              onChangeText={handleInputChange}
+              multiline={true}
+              editable={!isDisabled}
+              placeholderTextColor="#9CA3AF"
+            />
+            
+            <TouchableOpacity
+              onPress={handleSendMessage}
+              disabled={isLoading || !inputMessage.trim() || isDisabled}
+              style={[
+                styles.sendButton,
+                isLoading || !inputMessage.trim() || isDisabled
+                  ? styles.disabledButton
+                  : isDoctor
+                    ? styles.doctorButton
+                    : styles.userButton
+              ]}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="send" size={18} color="#fff" />
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </View>
   );
-}
+};
+
+// Styles
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: 'white',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyText: {
+    color: '#6B7280',
+    fontFamily: 'Rubik-Regular',
+  },
+  inputContainer: {
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    padding: 8,
+    backgroundColor: 'white',
+  },
+  disabledContainer: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+  },
+  disabledText: {
+    color: '#6B7280',
+    fontFamily: 'Rubik-Medium',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  textInput: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 8,
+    minHeight: 40,
+    maxHeight: 100,
+    fontFamily: 'Rubik-Regular',
+    color: '#111827',
+  },
+  sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabledButton: {
+    backgroundColor: '#9CA3AF',
+  },
+  doctorButton: {
+    backgroundColor: '#10B981',
+  },
+  userButton: {
+    backgroundColor: '#3B82F6',
+  },
+  messageBubbleContainer: {
+    maxWidth: '75%',
+    marginBottom: 16,
+  },
+  userMessageContainer: {
+    alignSelf: 'flex-end',
+  },
+  otherMessageContainer: {
+    alignSelf: 'flex-start',
+  },
+  messageBubble: {
+    padding: 12,
+    borderRadius: 16,
+  },
+  userBubble: {
+    backgroundColor: '#3B82F6',
+    borderTopRightRadius: 4,
+  },
+  otherBubble: {
+    backgroundColor: '#F3F4F6',
+    borderTopLeftRadius: 4,
+  },
+  errorBubble: {
+    backgroundColor: '#FEE2E2',
+    borderTopRightRadius: 4,
+  },
+  messageText: {
+    fontFamily: 'Rubik-Regular',
+  },
+  userText: {
+    color: 'white',
+  },
+  otherText: {
+    color: '#1F2937',
+  },
+  errorText: {
+    color: '#B91C1C',
+  },
+  timeText: {
+    fontSize: 10,
+    marginTop: 4,
+  },
+  userTimeText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'right',
+  },
+  otherTimeText: {
+    color: '#6B7280',
+  },
+  errorTimeText: {
+    color: '#DC2626',
+    textAlign: 'right',
+  },
+});
+
+export default ChatInterface;
