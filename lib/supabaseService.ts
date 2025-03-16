@@ -512,6 +512,9 @@ export const DoctorRequestService = {
         };
     },
 
+
+    
+
     // Fix for DoctorRequestService getAllRequests method
 async getAllRequests(): Promise<any[]> { // Removed the stray 'f' character
     try {
