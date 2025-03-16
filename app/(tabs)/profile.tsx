@@ -183,15 +183,15 @@ export default function PatientProfileScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50">
-      <StatusBar barStyle="light" />
+    <View className="flex-1 bg-gray-50">
+      <StatusBar style="light" />
       
       {/* Header */}
       <LinearGradient
-        colors={['#3b82f6', '#2563eb']}
+        colors={['#4f46e5', '#7c3aed']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        className="pt-6 pb-6 px-5 rounded-b-3xl shadow-lg"
+        className="pt-12 pb-6 px-5"
       >
         <View className="flex-row justify-between items-center mb-4">
           <Text className="text-2xl font-rubik-bold text-white">My Profile</Text>
@@ -383,6 +383,6 @@ export default function PatientProfileScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }

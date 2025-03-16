@@ -39,19 +39,29 @@ import {
   }
   
   // Create a new conversation
-  export async function createConversation(userId: string): Promise<Conversation | null> {
+// Create a new conversation
+export async function createConversation(userId: string, title?: string): Promise<Conversation | null> {
     try {
-      const conversation = await ConversationService.createConversation(userId);
+      const conversation = await ConversationService.createConversation(userId, title);
       
       if (!conversation) {
         throw new Error('Failed to create conversation');
       }
       
+      // Get the user's profile to access their name
+      const userProfile = await ProfileService.getProfile(userId);
+      const userName = userProfile?.full_name?.split(' ')[0] || '';
+      
+      // Create a personalized greeting
+      const greeting = userName 
+        ? `Hello ${userName}! I'm your Health Sync AI. How can I help you today? You can ask me general health questions, or request to speak with a healthcare professional if you need more specific advice.`
+        : `Hello! I'm your Health Sync AI. How can I help you today? You can ask me general health questions, or request to speak with a healthcare professional if you need more specific advice.`;
+      
       // Send a welcome message from the assistant
       await MessageService.sendMessage(
         conversation.id,
         'assistant',
-        'Hello! I\'m your HealthAssist AI. How can I help you today? You can ask me general health questions, or request to speak with a healthcare professional if you need more specific advice.'
+        greeting
       );
       
       return conversation;

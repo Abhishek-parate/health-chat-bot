@@ -75,7 +75,7 @@ const AboutScreen = () => {
           >
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
-          <Text className="text-2xl font-bold text-white">About HealthAssist</Text>
+          <Text className="text-2xl font-bold text-white">About Health Sync</Text>
         </View>
         
         <View className="flex-row items-center">
@@ -83,7 +83,7 @@ const AboutScreen = () => {
             <Text className="text-4xl">🩺</Text>
           </View>
           <View>
-            <Text className="text-white text-lg font-semibold mb-1">HealthAssist</Text>
+            <Text className="text-white text-lg font-semibold mb-1">Health Sync</Text>
             <Text className="text-white/80">Version 1.0.2</Text>
           </View>
         </View>
@@ -94,7 +94,7 @@ const AboutScreen = () => {
         <View className="bg-white rounded-xl p-5 shadow-sm mb-6">
           <Text className="text-xl font-bold text-gray-800 mb-3">Our Mission</Text>
           <Text className="text-gray-600 leading-6">
-            HealthAssist is designed to make reliable health information accessible to everyone. 
+            Health Sync is designed to make reliable health information accessible to everyone. 
             We combine advanced AI technology with expert medical knowledge to provide personalized 
             health guidance that empowers you to make informed decisions about your wellbeing.
           </Text>
@@ -144,7 +144,7 @@ const AboutScreen = () => {
             <Text className="text-lg font-bold text-gray-800 ml-2">Important Disclaimer</Text>
           </View>
           <Text className="text-gray-700 leading-5">
-            HealthAssist provides general health information and is not a substitute for professional 
+            Health Sync provides general health information and is not a substitute for professional 
             medical advice, diagnosis, or treatment. Always consult with a qualified healthcare provider 
             for medical concerns.
           </Text>
@@ -158,7 +158,7 @@ const AboutScreen = () => {
             className="flex-row items-center py-3 border-b border-gray-100"
           >
             <Ionicons name="mail" size={20} color="#4f46e5" />
-            <Text className="text-gray-800 ml-3">support@healthassist.com</Text>
+            <Text className="text-gray-800 ml-3">support@Health Sync.com</Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -185,7 +185,7 @@ const AboutScreen = () => {
         
         {/* Footer */}
         <View className="items-center pb-8">
-          <Text className="text-gray-500 text-sm mb-2">© 2025 HealthAssist, Inc.</Text>
+          <Text className="text-gray-500 text-sm mb-2">© 2025 Health Sync, Inc.</Text>
           <Text className="text-gray-500 text-sm">All Rights Reserved</Text>
         </View>
       </ScrollView>
