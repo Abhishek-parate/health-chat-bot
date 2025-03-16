@@ -105,21 +105,21 @@ export default function AdminProfileScreen() {
       title: 'Privacy Policy',
       description: 'How we protect your data',
       type: 'link',
-      onPress: () => router.push('/privacy-policy')
+      
     },
     {
       icon: 'document-text',
       title: 'Terms of Service',
       description: 'User agreement',
       type: 'link',
-      onPress: () => router.push('/terms')
+      
     },
     {
       icon: 'help-circle',
       title: 'Help & Support',
       description: 'Get assistance',
       type: 'link',
-      onPress: () => router.push('/support')
+     
     },
     {
       icon: 'information-circle',

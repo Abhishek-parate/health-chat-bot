@@ -1,38 +1,20 @@
-// utils/notificationService.ts
-import { Audio } from 'expo-av';
+// utils/notificationService.ts - Completely simplified without Audio API
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
-
-// Sound objects
-let messageSentSound: Audio.Sound | null = null;
-let messageReceivedSound: Audio.Sound | null = null;
+import { Platform, Vibration } from 'react-native';
 
 // Message badge count
 let unreadMessageCount = 0;
 
 /**
- * Initialize sounds and notifications for the app
+ * Initialize notifications for the app - NO SOUND INITIALIZATION
  */
 export const initSounds = async (): Promise<void> => {
   try {
-    // Configure notifications
+    // Just configure notifications, don't load sounds
     await configureNotifications();
-    
-    // Load sound files
-    const sentSoundModule = require('../assets/sounds/message-sent.wav');
-    const receivedSoundModule = require('../assets/sounds/message-received.wav');
-    
-    // Create sound objects
-    const { sound: sentSound } = await Audio.Sound.createAsync(sentSoundModule);
-    const { sound: receivedSound } = await Audio.Sound.createAsync(receivedSoundModule);
-    
-    // Store sound objects
-    messageSentSound = sentSound;
-    messageReceivedSound = receivedSound;
-    
-    console.log('Sounds initialized successfully');
+    console.log('Notification system initialized successfully');
   } catch (error) {
-    console.error('Error initializing sounds:', error);
+    console.error('Error initializing notification system:', error);
   }
 };
 
@@ -58,52 +40,38 @@ export const configureNotifications = async (): Promise<boolean> => {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
-      shouldPlaySound: true,
+      shouldPlaySound: true,  // This will use system sounds
       shouldSetBadge: true,
     }),
-  });
-  
-  // Setup notification received listener
-  const notificationListener = Notifications.addNotificationReceivedListener(notification => {
-    console.log('Notification received:', notification);
-  });
-  
-  // Setup notification response listener
-  const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
-    console.log('Notification response received:', response);
-    // You can handle navigation here, but it's better to do it in the component
   });
   
   return true;
 };
 
 /**
- * Play the message sent sound
+ * Just vibrate the device - no sound playback attempt
  */
 export const playMessageSentSound = async (): Promise<void> => {
-  try {
-    if (messageSentSound) {
-      await messageSentSound.replayAsync();
-    } else {
-      console.warn('Message sent sound not initialized');
-    }
-  } catch (error) {
-    console.error('Error playing message sent sound:', error);
-  }
+  // Just use vibration instead of attempting to play sounds
+  Vibration.vibrate(80);
 };
 
 /**
- * Play the message received sound
+ * Just vibrate the device - no sound playback attempt
  */
 export const playMessageReceivedSound = async (): Promise<void> => {
-  try {
-    if (messageReceivedSound) {
-      await messageReceivedSound.replayAsync();
-    } else {
-      console.warn('Message received sound not initialized');
-    }
-  } catch (error) {
-    console.error('Error playing message received sound:', error);
+  // Longer vibration pattern for received messages
+  Vibration.vibrate([0, 80, 100, 80]);
+};
+
+/**
+ * Simplified version that just vibrates without any audio API calls
+ */
+export const playSimpleSound = async (isMessageSent = true): Promise<void> => {
+  if (isMessageSent) {
+    Vibration.vibrate(80);
+  } else {
+    Vibration.vibrate([0, 80, 100, 80]);
   }
 };
 
@@ -121,7 +89,7 @@ export const showNotification = async (
         title,
         body,
         data: data || {},
-        sound: true,
+        sound: true,  // Use system default sound
       },
       trigger: null, // Show immediately
     });
@@ -144,6 +112,9 @@ export const showMessageNotification = async (
 ): Promise<string> => {
   const title = `New message from ${senderName}`;
   const body = message;
+  
+  // Always vibrate when showing notifications
+  playSimpleSound(!isDoctor);
   
   return showNotification(title, body, {
     conversationId,
@@ -230,16 +201,24 @@ export const clearAllNotifications = async (): Promise<void> => {
   }
 };
 
+// Cleanup on app exit
+export const cleanupSounds = async () => {
+  // Nothing to clean up since we're not using Audio API
+  console.log('No sounds to clean up');
+};
+
 export default {
   initSounds,
   configureNotifications,
   playMessageSentSound,
   playMessageReceivedSound,
+  playSimpleSound,
   showNotification,
   showMessageNotification,
   clearUnreadMessageCount,
   incrementUnreadMessageCount,
   setUnreadMessageCount,
   getUnreadMessageCount,
-  clearAllNotifications
+  clearAllNotifications,
+  cleanupSounds
 };

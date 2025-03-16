@@ -1,4 +1,4 @@
-// app/(tabs)/chat/index.tsx - Updated to fix unread count immediately
+// app/(tabs)/chat/index.tsx - Updated with improved UI
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -8,11 +8,13 @@ import {
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
-  Image
+  Image,
+  StatusBar
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/contexts/AuthProvider';
-import { FontAwesome, Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import { 
   createConversation, 
@@ -36,6 +38,7 @@ export default function ChatScreen() {
   const [isWithDoctor, setIsWithDoctor] = useState(false);
   const [doctorInfo, setDoctorInfo] = useState(null);
   const [conversation, setConversation] = useState(null);
+  const [currentTopic, setCurrentTopic] = useState(params.topic || 'Health Chat');
   
   // Initialize conversation on load
   useEffect(() => {
@@ -62,6 +65,9 @@ export default function ChatScreen() {
           }
           
           setConversation(conversationData);
+          if (conversationData.title) {
+            setCurrentTopic(conversationData.title);
+          }
           
           // Check if this is a doctor chat
           if (conversationData.is_doctor_chat && conversationData.doctor_id) {
@@ -88,7 +94,12 @@ export default function ChatScreen() {
           }
         } else {
           // Create a new conversation with AI
-          const conversation = await createConversation(user.id);
+          let title = "Health Chat";
+          if (params.topic) {
+            title = params.topic;
+          }
+          
+          const conversation = await createConversation(user.id, title);
           
           if (!conversation) {
             throw new Error('Failed to create conversation');
@@ -99,8 +110,8 @@ export default function ChatScreen() {
           
           // If topic was provided, send an initial message
           if (params.topic) {
-            const topic = params.topic;
-            await handleSendMessage(`Tell me about ${topic}`);
+            setCurrentTopic(params.topic);
+            await handleSendMessage(`Tell me about ${params.topic}`);
           }
         }
       } catch (err) {
@@ -198,105 +209,224 @@ export default function ChatScreen() {
   
   if (!isAuthenticated) {
     return (
-      <View className="flex-1 justify-center items-center p-4">
-        <ActivityIndicator size="large" color="#0ea5e9" />
-        <Text className="mt-4 text-gray-600 font-rubik">Checking authentication...</Text>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16, backgroundColor: '#f9fafb' }}>
+        <StatusBar barStyle="dark-content" />
+        <ActivityIndicator size="large" color="#4f46e5" />
+        <Text style={{ marginTop: 16, color: '#6b7280', fontWeight: '500' }}>Checking authentication...</Text>
       </View>
     );
   }
   
   if (isLoading) {
     return (
-      <View className="flex-1 justify-center items-center p-4">
-        <ActivityIndicator size="large" color="#0ea5e9" />
-        <Text className="mt-4 text-gray-600 font-rubik">Loading your chat...</Text>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16, backgroundColor: '#f9fafb' }}>
+        <StatusBar barStyle="dark-content" />
+        <ActivityIndicator size="large" color="#4f46e5" />
+        <Text style={{ marginTop: 16, color: '#6b7280', fontWeight: '500' }}>Loading your chat...</Text>
       </View>
     );
   }
   
   if (error) {
     return (
-      <View className="flex-1 justify-center items-center p-4">
-        <Text className="text-red-500 mb-4 font-rubik">{error}</Text>
-        <TouchableOpacity
-          className="bg-blue-500 px-4 py-2 rounded-lg"
-          onPress={() => router.replace('/chat')}
-        >
-          <Text className="text-white font-rubik-medium">Try Again</Text>
-        </TouchableOpacity>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16, backgroundColor: '#f9fafb' }}>
+        <StatusBar barStyle="dark-content" />
+        <View style={{ 
+          backgroundColor: 'white', 
+          borderRadius: 16, 
+          padding: 24, 
+          alignItems: 'center',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.05,
+          shadowRadius: 15,
+          elevation: 2,
+          width: '100%',
+          maxWidth: 400
+        }}>
+          <View style={{ 
+            backgroundColor: '#fee2e2', 
+            borderRadius: 100, 
+            width: 56, 
+            height: 56, 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            marginBottom: 16
+          }}>
+            <Ionicons name="alert-circle" size={32} color="#dc2626" />
+          </View>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: '#1f2937', marginBottom: 8 }}>
+            Connection Error
+          </Text>
+          <Text style={{ textAlign: 'center', color: '#6b7280', marginBottom: 24 }}>
+            {error}
+          </Text>
+          <TouchableOpacity
+            style={{
+              backgroundColor: '#4f46e5',
+              paddingVertical: 12,
+              paddingHorizontal: 24,
+              borderRadius: 8,
+              width: '100%',
+              alignItems: 'center'
+            }}
+            onPress={() => router.replace('/chat')}
+          >
+            <Text style={{ color: 'white', fontWeight: '600' }}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
   
+  // Determine header gradient colors based on chat type
+  const headerGradient = isWithDoctor 
+    ? ['#059669', '#10b981'] // Doctor chat - green gradient
+    : ['#4f46e5', '#7c3aed']; // AI chat - purple gradient
+  
   return (
-    <SafeAreaView className="flex-1 bg-white">
-      {/* Header */}
-      <View className={`px-4 pt-12 pb-4 border-b border-gray-200 ${isWithDoctor ? 'bg-emerald-50' : 'bg-white'}`}>
-        <View className="flex-row items-center justify-between">
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
+      <StatusBar barStyle="light-content" />
+      
+      {/* Header with gradient */}
+      <LinearGradient
+        colors={headerGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{
+          paddingTop: 48,
+          paddingBottom: 16,
+          paddingHorizontal: 20,
+          borderBottomLeftRadius: 24,
+          borderBottomRightRadius: 24,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <TouchableOpacity
             onPress={() => router.push('/conversations')}
-            className="mr-3"
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
           >
-            <FontAwesome name="list" size={20} color="#4b5563" />
+            <Ionicons name="chevron-back" size={24} color="white" />
           </TouchableOpacity>
           
-          {isWithDoctor && doctorInfo ? (
-            <View className="flex-1 flex-row items-center">
-              <View className="h-8 w-8 rounded-full bg-emerald-100 items-center justify-center mr-2">
-                {doctorInfo.avatar_url ? (
-                  <Image 
-                    source={{ uri: doctorInfo.avatar_url }} 
-                    className="h-8 w-8 rounded-full" 
-                  />
-                ) : (
-                  <Text className="text-emerald-600 font-rubik-bold">
-                    {doctorInfo.full_name?.charAt(0) || 'D'}
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            {isWithDoctor && doctorInfo ? (
+              <View style={{ alignItems: 'center', flexDirection: 'row' }}>
+                <View style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 12
+                }}>
+                  {doctorInfo.avatar_url ? (
+                    <Image 
+                      source={{ uri: doctorInfo.avatar_url }} 
+                      style={{ width: 36, height: 36, borderRadius: 18 }} 
+                    />
+                  ) : (
+                    <MaterialCommunityIcons name="doctor" size={24} color="white" />
+                  )}
+                </View>
+                <View>
+                  <Text style={{ color: 'white', fontWeight: '700', fontSize: 16 }}>
+                    Dr. {doctorInfo.full_name?.split(' ')[0] || 'Doctor'}
                   </Text>
-                )}
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={{ 
+                      width: 8, 
+                      height: 8, 
+                      borderRadius: 4, 
+                      backgroundColor: doctorInfo.status === 'online' ? '#10b981' : 
+                                      doctorInfo.status === 'busy' ? '#f59e0b' : '#9ca3af',
+                      marginRight: 4
+                    }} />
+                    <Text style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: 12 }}>
+                      {doctorInfo.status || 'offline'}
+                    </Text>
+                  </View>
+                </View>
               </View>
-              <View className="flex-1">
-                <Text className="font-rubik-bold text-emerald-800">
-                  Dr. {doctorInfo.full_name || 'Doctor'}
-                </Text>
-                {doctorInfo.specialty && (
-                  <Text className="text-emerald-600 text-xs font-rubik">
-                    {doctorInfo.specialty}
-                  </Text>
-                )}
-              </View>
-              <View className={`px-2 py-1 rounded-full ${
-                doctorInfo.status === 'online' ? 'bg-emerald-100' : 
-                doctorInfo.status === 'busy' ? 'bg-amber-100' : 'bg-gray-100'
-              }`}>
-                <Text className={`text-xs font-rubik-medium ${
-                  doctorInfo.status === 'online' ? 'text-emerald-800' :
-                  doctorInfo.status === 'busy' ? 'text-amber-800' : 'text-gray-600'
-                }`}>
-                  {doctorInfo.status || 'offline'}
-                </Text>
-              </View>
-            </View>
-          ) : (
-            <Text className="text-xl font-rubik-bold flex-1">
-              {isWithDoctor ? 'Doctor Consultation' : 'Health Chat'}
-            </Text>
-          )}
+            ) : (
+              <Text style={{ color: 'white', fontWeight: '700', fontSize: 16 }}>
+                {currentTopic}
+              </Text>
+            )}
+          </View>
           
-          <TouchableOpacity 
-            className="p-2"
+          <TouchableOpacity
             onPress={() => router.replace('/chat')}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
           >
-            <FontAwesome name="plus" size={20} color="#3b82f6" />
+            <Ionicons name="add" size={24} color="white" />
           </TouchableOpacity>
         </View>
-      </View>
+      </LinearGradient>
       
       {/* Main content with keyboard avoiding */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
+        style={{ flex: 1 }}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
+        {isWithDoctor && doctorInfo && (
+          <View style={{ 
+            marginHorizontal: 16, 
+            marginTop: -20, 
+            backgroundColor: 'white', 
+            borderRadius: 12, 
+            padding: 12, 
+            flexDirection: 'row',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.05,
+            shadowRadius: 3,
+            elevation: 2,
+            marginBottom: 4
+          }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: '600', color: '#059669', marginBottom: 2 }}>
+                Doctor Consultation
+              </Text>
+              {doctorInfo.specialty && (
+                <Text style={{ fontSize: 13, color: '#6b7280' }}>
+                  {doctorInfo.specialty} • {doctorInfo.years_experience || 5}+ years experience
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                backgroundColor: '#ecfdf5',
+                borderRadius: 8,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 12, color: '#059669', fontWeight: '600' }}>
+                {conversation?.status === 'closed' ? 'Closed' : 'Active'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        
         {/* Chat Interface with realtime messaging */}
         <ChatInterface
           conversationId={conversationId || undefined}
@@ -308,7 +438,7 @@ export default function ChatScreen() {
         />
         
         {/* Bottom padding */}
-        <View className="h-8" />
+        <View style={{ height: 8 }} />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

@@ -5,11 +5,11 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import Constants from 'expo-constants';
 
 import AuthProvider from '@/contexts/AuthProvider';
 import PatientChatNotification from '@/components/PatientChatNotification';
-import { initSounds } from '@/utils/notificationService';
+import DoctorChatNotification from '@/components/DoctorChatNotification';
+import { initSounds, cleanupSounds } from '@/utils/notificationService';
 import '../global.css';
 import NotificationHandlerWrapper from '@/components/NotificationHandlerWrapper';
 
@@ -72,8 +72,14 @@ export default function RootLayout() {
           return;
         }
         
-        // Initialize sound notifications
-        await initSounds();
+        // Initialize sound notifications with improved error handling
+        try {
+          await initSounds();
+          console.log('Sound system initialized successfully');
+        } catch (soundErr) {
+          console.warn('Sound initialization failed, continuing without sounds:', soundErr);
+          // Don't fail the app startup if sounds fail to initialize
+        }
         
         // Add a small delay for better UX
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -89,6 +95,13 @@ export default function RootLayout() {
     }
 
     prepare();
+    
+    // Cleanup on unmount
+    return () => {
+      cleanupSounds().catch(err => {
+        console.warn('Error cleaning up sounds:', err);
+      });
+    };
   }, [fontsLoaded]);
 
   if (!appIsReady || !fontsLoaded) {
@@ -99,33 +112,37 @@ export default function RootLayout() {
     return <ErrorScreen message={error} />;
   }
 
-  // Wrap the app with the Supabase Auth Provider and PatientChatNotification
+  // Wrap the app with Auth Provider, Notification Handler, and both Patient and Doctor notification components
   return (
     <>
       <StatusBar style="auto" />
       <AuthProvider>
-  <NotificationHandlerWrapper>
-    <PatientChatNotification>
-          <Stack 
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: '#f8fafc' },
-              animation: 'slide_from_right',
-            }}
-          >
-            <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-            <Stack.Screen 
-              name="(auth)" 
-              options={{ 
-                animation: 'slide_from_bottom',
-                presentation: 'modal'
-              }} 
-            />
-            <Stack.Screen name="(doctor)" options={{ animation: 'fade' }} />
-          </Stack>
-          </PatientChatNotification>
-  </NotificationHandlerWrapper>
-</AuthProvider>
+        <NotificationHandlerWrapper>
+          {/* First the DoctorChatNotification to handle messages from patients */}
+          <DoctorChatNotification>
+            {/* Then the PatientChatNotification to handle messages from doctors */}
+            <PatientChatNotification>
+              <Stack 
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: '#f8fafc' },
+                  animation: 'slide_from_right',
+                }}
+              >
+                <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+                <Stack.Screen 
+                  name="(auth)" 
+                  options={{ 
+                    animation: 'slide_from_bottom',
+                    presentation: 'modal'
+                  }} 
+                />
+                <Stack.Screen name="(doctor)" options={{ animation: 'fade' }} />
+              </Stack>
+            </PatientChatNotification>
+          </DoctorChatNotification>
+        </NotificationHandlerWrapper>
+      </AuthProvider>
     </>
   );
 }

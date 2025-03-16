@@ -78,58 +78,34 @@ export default function ConversationsScreen() {
   };
   
   // Clear unread count and navigate to chat
-  const handleOpenConversation = useCallback(async (conversation) => {
-    try {
-      // First, update our local state immediately to hide unread indicators
-      // This ensures the indicators disappear before navigation
-      if (conversation.unreadCount > 0) {
-        // Create a new conversations array with this conversation's unread count set to 0
-        const updatedConversations = conversations.map(convo => 
-          convo.id === conversation.id 
-            ? { ...convo, unreadCount: 0 } 
-            : convo
-        );
-        
-        // Update state with new array
-        setConversations(updatedConversations);
-        
-        // Calculate new total unread count
-        const newTotalCount = updatedConversations.reduce(
-          (sum, convo) => sum + (convo.unreadCount || 0), 
-          0
-        );
-        
-        // Update total count
-        setTotalUnreadCount(newTotalCount);
-        
-        // Update app badge
-        setUnreadMessageCount(newTotalCount);
-        
-        // Now update the database
-        if (user) {
-          MessageService.markMessagesAsRead(conversation.id, user.id)
-            .catch(error => console.error('Error marking messages as read:', error));
-        }
-      }
+// Clear unread count and navigate to chat
+const handleOpenConversation = useCallback(async (conversation) => {
+    if (conversation.unreadCount > 0) {
+      // Update UI immediately
+      setConversations(prev => prev.map(convo => 
+        convo.id === conversation.id 
+          ? { ...convo, unreadCount: 0 } 
+          : convo
+      ));
       
-      // Wait a tiny bit to allow state updates to propagate to UI
-      // This ensures the badge is hidden before navigation
-      setTimeout(() => {
-        // Navigate to the chat
-        router.push({
-          pathname: '/chat',
-          params: { conversationId: conversation.id }
-        });
-      }, 50);
-    } catch (error) {
-      console.error('Error opening conversation:', error);
-      // Still try to navigate even if there was an error
-      router.push({
-        pathname: '/chat',
-        params: { conversationId: conversation.id }
-      });
+      // Calculate new total unread count
+      setTotalUnreadCount(prev => Math.max(0, prev - (conversation.unreadCount || 0)));
+      
+      // Update app badge count
+      setUnreadMessageCount(Math.max(0, totalUnreadCount - (conversation.unreadCount || 0)));
+      
+      // Update database
+      if (user) {
+        await MessageService.markMessagesAsRead(conversation.id, user.id);
+      }
     }
-  }, [conversations, user, router]);
+    
+    // Navigate to the chat
+    router.push({
+      pathname: '/chat',
+      params: { conversationId: conversation.id }
+    });
+  }, [user, router, totalUnreadCount]);
   
   const filteredConversations = conversations.filter(convo => {
     if (filter === 'all') return true;
@@ -169,7 +145,6 @@ export default function ConversationsScreen() {
   const renderConversationItem = ({ item }) => {
     const isDoctor = item.is_doctor_chat;
     const lastMessage = item.lastMessage;
-    const hasUnread = item.unreadCount > 0;
     
     let subtitle = 'No messages yet';
     if (lastMessage) {
@@ -218,13 +193,7 @@ export default function ConversationsScreen() {
                 {subtitle}
               </Text>
               
-              {hasUnread && (
-                <View className="bg-indigo-600 h-5 min-w-5 rounded-full items-center justify-center px-1">
-                  <Text className="text-white text-xs font-rubik-bold">
-                    {item.unreadCount}
-                  </Text>
-                </View>
-              )}
+  
             </View>
             
             {isDoctor && (
@@ -326,7 +295,6 @@ export default function ConversationsScreen() {
       ) : (
         <FlatList
           data={filteredConversations}
-          extraData={totalUnreadCount} // Add this to ensure FlatList re-renders when counts change
           renderItem={renderConversationItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: 16 }}

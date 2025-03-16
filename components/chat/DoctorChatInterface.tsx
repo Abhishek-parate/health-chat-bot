@@ -124,7 +124,7 @@ export function DoctorChatInterface({
         }}
       />
       
-      <View className="absolute bottom-0 left-0 right-0 border-t border-gray-200 bg-white p-2">
+      <View className="absolute bottom-0 left-0 right-0 border-t border-gray-200 bg-white p-2 mb-10">
         <View className="flex-row items-center">
           <TextInput
             placeholder={isDisabled ? "Consultation is closed" : "Type your medical advice..."}

@@ -156,7 +156,6 @@ const AboutScreen = () => {
           
           <TouchableOpacity 
             className="flex-row items-center py-3 border-b border-gray-100"
-            onPress={() => Linking.openURL('mailto:support@healthassist.com')}
           >
             <Ionicons name="mail" size={20} color="#4f46e5" />
             <Text className="text-gray-800 ml-3">support@healthassist.com</Text>
@@ -164,7 +163,6 @@ const AboutScreen = () => {
           
           <TouchableOpacity 
             className="flex-row items-center py-3 border-b border-gray-100"
-            onPress={() => Linking.openURL('https://healthassist.com/help')}
           >
             <Ionicons name="help-circle" size={20} color="#4f46e5" />
             <Text className="text-gray-800 ml-3">Help Center</Text>
@@ -172,7 +170,6 @@ const AboutScreen = () => {
           
           <TouchableOpacity 
             className="flex-row items-center py-3 border-b border-gray-100"
-            onPress={() => Linking.openURL('https://healthassist.com/privacy')}
           >
             <Ionicons name="shield" size={20} color="#4f46e5" />
             <Text className="text-gray-800 ml-3">Privacy Policy</Text>
@@ -180,7 +177,6 @@ const AboutScreen = () => {
           
           <TouchableOpacity 
             className="flex-row items-center py-3"
-            onPress={() => Linking.openURL('https://healthassist.com/terms')}
           >
             <Ionicons name="document-text" size={20} color="#4f46e5" />
             <Text className="text-gray-800 ml-3">Terms of Service</Text>

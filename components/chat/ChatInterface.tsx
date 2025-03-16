@@ -1,4 +1,4 @@
-// components/chat/ChatInterface.tsx - Optimized implementation
+// components/chat/ChatInterface.tsx - Converted to use NativeWind
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   View, 
@@ -7,54 +7,52 @@ import {
   TouchableOpacity, 
   ActivityIndicator,
   Text,
-  StyleSheet,
-  Platform
+  Platform,
+  Vibration
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
-import { playMessageSentSound, playMessageReceivedSound } from '@/utils/notificationService';
-import { Message } from '@/lib/supabaseService';
+import { 
+  playMessageSentSound, 
+  playMessageReceivedSound,
+  playSimpleSound
+} from '@/utils/notificationService';
 
-// Simple Message Bubble component (replace with your own if needed)
+// Simple Message Bubble component with NativeWind styling
 const MessageBubble = React.memo(({ 
   message, 
   isUser, 
   timestamp,
   isError
-}: { 
-  message: string; 
-  isUser: boolean; 
-  timestamp: Date;
-  isError?: boolean;
 }) => {
   // Format time as HH:MM
   const timeString = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   
   return (
-    <View style={[
-      styles.messageBubbleContainer,
-      isUser ? styles.userMessageContainer : styles.otherMessageContainer
-    ]}>
-      <View style={[
-        styles.messageBubble,
-        isUser 
-          ? (isError ? styles.errorBubble : styles.userBubble) 
-          : styles.otherBubble
-      ]}>
-        <Text style={[
-          styles.messageText,
+    <View className={`max-w-[75%] mb-4 ${isUser ? 'self-end' : 'self-start'}`}>
+      <View 
+        className={`p-3 rounded-2xl ${
           isUser 
-            ? (isError ? styles.errorText : styles.userText) 
-            : styles.otherText
-        ]}>
+            ? (isError ? 'bg-red-100 rounded-tr-sm' : 'bg-blue-500 rounded-tr-sm') 
+            : 'bg-gray-100 rounded-tl-sm'
+        }`}
+      >
+        <Text 
+          className={`font-['Rubik-Regular'] ${
+            isUser 
+              ? (isError ? 'text-red-700' : 'text-white') 
+              : 'text-gray-800'
+          }`}
+        >
           {message}
         </Text>
-        <Text style={[
-          styles.timeText,
-          isUser 
-            ? (isError ? styles.errorTimeText : styles.userTimeText) 
-            : styles.otherTimeText
-        ]}>
+        <Text 
+          className={`text-xs mt-1 ${
+            isUser 
+              ? (isError ? 'text-red-600 text-right' : 'text-white/80 text-right') 
+              : 'text-gray-500'
+          }`}
+        >
           {timeString}
         </Text>
       </View>
@@ -62,18 +60,33 @@ const MessageBubble = React.memo(({
   );
 });
 
-// Define the Chat Interface Props
-interface ChatInterfaceProps {
-  conversationId?: string | number;
-  initialMessages?: any[];
-  onSendMessage: (message: string) => Promise<string>;
-  isDoctor?: boolean;
-  isDisabled?: boolean;
-  userId: string;
-  isActive?: boolean;
-}
+// Explicitly set displayName to fix the error
+MessageBubble.displayName = 'MessageBubble';
 
-export const ChatInterface: React.FC<ChatInterfaceProps> = ({
+// Handle playing sound with fallback mechanism
+const playMessageSound = async (isSent = true) => {
+  try {
+    // Try main method first
+    if (isSent) {
+      await playMessageSentSound();
+    } else {
+      await playMessageReceivedSound();
+    }
+  } catch (error) {
+    console.log('Falling back to simple sound method');
+    try {
+      // Fall back to simple method if the main one fails
+      await playSimpleSound(isSent);
+    } catch (fallbackError) {
+      console.error('Both sound methods failed, using vibration as last resort');
+      // Last resort - just vibrate
+      Vibration.vibrate(isSent ? 100 : 300);
+    }
+  }
+};
+
+// Define the Chat Interface Props
+const ChatInterface = ({
   conversationId,
   initialMessages = [],
   onSendMessage,
@@ -82,11 +95,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   userId,
   isActive = true
 }) => {
-  const [messages, setMessages] = useState<any[]>(initialMessages);
-  const [inputMessage, setInputMessage] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const scrollViewRef = useRef<ScrollView | null>(null);
-  const subscription = useRef<any>(null);
+  const [messages, setMessages] = useState(initialMessages);
+  const [inputMessage, setInputMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const scrollViewRef = useRef(null);
+  const subscription = useRef(null);
+  
+  // Track seen message IDs to prevent duplicate notifications
+  const seenMessageIds = useRef(new Set());
 
   // Set up realtime subscription for new messages
   useEffect(() => {
@@ -105,21 +121,47 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             if (payload.new) {
               const newMessage = payload.new;
               
+              // Skip this message if we've already seen it
+              if (seenMessageIds.current.has(newMessage.id)) {
+                console.log(`Skipping already processed message: ${newMessage.id}`);
+                return;
+              }
+              
+              // Mark this message as seen
+              seenMessageIds.current.add(newMessage.id);
+              
               // Only add message if it's not from the current user
               const isMine = newMessage.sender_id === userId;
               
               // Add message to the list if not already there
               setMessages(prev => {
-                // Check if message already exists in our list
-                const exists = prev.some(msg => msg.id === newMessage.id);
-                if (!exists) {
-                  // Play sound for new message if it's not mine and app is active
-                  if (!isMine && isActive) {
-                    playMessageReceivedSound();
-                  }
-                  return [...prev, newMessage];
+                // Check if message with same content and sender already exists
+                // This handles both temp IDs and real IDs
+                const exists = prev.some(msg => 
+                  msg.id === newMessage.id || 
+                  (msg.content === newMessage.content && 
+                   msg.sender_id === newMessage.sender_id &&
+                   Math.abs(new Date(msg.created_at).getTime() - new Date(newMessage.created_at).getTime()) < 5000)
+                );
+
+                if (exists) {
+                  // If the message exists, replace the temporary one with the real one
+                  return prev.map(msg => {
+                    if (msg.content === newMessage.content && 
+                        msg.sender_id === newMessage.sender_id &&
+                        Math.abs(new Date(msg.created_at).getTime() - new Date(newMessage.created_at).getTime()) < 5000) {
+                      return newMessage;
+                    }
+                    return msg;
+                  });
                 }
-                return prev;
+                
+                // If it doesn't exist, add it
+                // Play sound for new message if it's not mine and app is active
+                if (!isMine && isActive) {
+                  playMessageSound(false);
+                }
+                return [...prev, newMessage];
               });
             }
           })
@@ -155,7 +197,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   }, [messages]);
 
   // Handle sending a message
-  const handleSendMessage = async (): Promise<void> => {
+  const handleSendMessage = async () => {
     if (!inputMessage.trim() || isLoading || isDisabled) return;
     
     const messageText = inputMessage.trim();
@@ -163,36 +205,28 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     setIsLoading(true);
     
     try {
-      // Play sound when sending message
-      playMessageSentSound();
-      
-      // Add optimistic message
-      const tempId = `temp-${Date.now()}`;
-      const tempMessage = {
-        id: tempId,
-        content: messageText,
-        sender_type: isDoctor ? 'doctor' : 'user',
-        role: isDoctor ? 'doctor' : 'user', // Add both for consistency
-        created_at: new Date().toISOString(),
-        is_read: true,
-        sender_id: userId
-      };
-      
-      setMessages(prev => [...prev, tempMessage]);
+      // Play sound when sending message using the new wrapper function
+      playMessageSound(true);
       
       // Send message through the parent component
       const error = await onSendMessage(messageText);
       
       if (error) {
         console.error('Error sending message:', error);
-        // Show error by replacing the temp message
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === tempId 
-              ? {...msg, content: 'Failed to send message', error: true} 
-              : msg
-          )
-        );
+        // Show error message if sending failed
+        setMessages(prev => [
+          ...prev, 
+          {
+            id: `error-${Date.now()}`,
+            content: 'Failed to send message',
+            sender_type: isDoctor ? 'doctor' : 'user',
+            role: isDoctor ? 'doctor' : 'user',
+            created_at: new Date().toISOString(),
+            is_read: true,
+            sender_id: userId,
+            error: true
+          }
+        ]);
       }
     } catch (error) {
       console.error('Error in handleSendMessage:', error);
@@ -202,7 +236,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   };
 
   // Handle input change
-  const handleInputChange = (text: string): void => {
+  const handleInputChange = (text) => {
     setInputMessage(text);
   };
 
@@ -213,8 +247,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     
     if (validMessages.length === 0) {
       return (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No messages yet</Text>
+        <View className="items-center justify-center py-10">
+          <Text className="text-gray-500 font-['Rubik-Regular']">No messages yet</Text>
         </View>
       );
     }
@@ -243,27 +277,27 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View className="flex-1 bg-white">
       <ScrollView
         ref={scrollViewRef}
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        className="flex-1"
+        contentContainerClassName="p-4 pb-10"
         onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
       >
         {renderMessages()}
       </ScrollView>
       
-      <View style={styles.inputContainer}>
+      <View className="border-t border-gray-200 p-2 bg-white z-10 shadow-sm">
         {isDisabled ? (
-          <View style={styles.disabledContainer}>
-            <Text style={styles.disabledText}>
+          <View className="bg-gray-100 rounded-lg p-3 items-center">
+            <Text className="text-gray-500 font-['Rubik-Medium']">
               This conversation has been closed
             </Text>
           </View>
         ) : (
-          <View style={styles.inputRow}>
+          <View className="flex-row items-center mb-14">
             <TextInput
-              style={styles.textInput}
+              className="flex-1 bg-gray-100 rounded-3xl px-4 py-2 mr-2 min-h-10 max-h-24 font-['Rubik-Regular'] text-gray-900"
               placeholder="Type a message..."
               value={inputMessage}
               onChangeText={handleInputChange}
@@ -275,14 +309,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <TouchableOpacity
               onPress={handleSendMessage}
               disabled={isLoading || !inputMessage.trim() || isDisabled}
-              style={[
-                styles.sendButton,
+              className={`w-10 h-10 rounded-full items-center justify-center ${
                 isLoading || !inputMessage.trim() || isDisabled
-                  ? styles.disabledButton
+                  ? 'bg-gray-400'
                   : isDoctor
-                    ? styles.doctorButton
-                    : styles.userButton
-              ]}
+                    ? 'bg-emerald-500'
+                    : 'bg-blue-500'
+              }`}
             >
               {isLoading ? (
                 <ActivityIndicator size="small" color="#fff" />
@@ -293,133 +326,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </View>
         )}
       </View>
+
+      {/* Add extra padding at bottom to ensure content stays above tab bar */}
+      <View className={`h-${Platform.OS === 'ios' ? '8' : '5'}`} />
     </View>
   );
 };
 
-// Styles
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: 'white',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40,
-  },
-  emptyText: {
-    color: '#6B7280',
-    fontFamily: 'Rubik-Regular',
-  },
-  inputContainer: {
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    padding: 8,
-    backgroundColor: 'white',
-  },
-  disabledContainer: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-  },
-  disabledText: {
-    color: '#6B7280',
-    fontFamily: 'Rubik-Medium',
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  textInput: {
-    flex: 1,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 8,
-    minHeight: 40,
-    maxHeight: 100,
-    fontFamily: 'Rubik-Regular',
-    color: '#111827',
-  },
-  sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  disabledButton: {
-    backgroundColor: '#9CA3AF',
-  },
-  doctorButton: {
-    backgroundColor: '#10B981',
-  },
-  userButton: {
-    backgroundColor: '#3B82F6',
-  },
-  messageBubbleContainer: {
-    maxWidth: '75%',
-    marginBottom: 16,
-  },
-  userMessageContainer: {
-    alignSelf: 'flex-end',
-  },
-  otherMessageContainer: {
-    alignSelf: 'flex-start',
-  },
-  messageBubble: {
-    padding: 12,
-    borderRadius: 16,
-  },
-  userBubble: {
-    backgroundColor: '#3B82F6',
-    borderTopRightRadius: 4,
-  },
-  otherBubble: {
-    backgroundColor: '#F3F4F6',
-    borderTopLeftRadius: 4,
-  },
-  errorBubble: {
-    backgroundColor: '#FEE2E2',
-    borderTopRightRadius: 4,
-  },
-  messageText: {
-    fontFamily: 'Rubik-Regular',
-  },
-  userText: {
-    color: 'white',
-  },
-  otherText: {
-    color: '#1F2937',
-  },
-  errorText: {
-    color: '#B91C1C',
-  },
-  timeText: {
-    fontSize: 10,
-    marginTop: 4,
-  },
-  userTimeText: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    textAlign: 'right',
-  },
-  otherTimeText: {
-    color: '#6B7280',
-  },
-  errorTimeText: {
-    color: '#DC2626',
-    textAlign: 'right',
-  },
-});
+// Explicitly set displayName to fix the error
+ChatInterface.displayName = 'ChatInterface';
 
+export { ChatInterface };
 export default ChatInterface;

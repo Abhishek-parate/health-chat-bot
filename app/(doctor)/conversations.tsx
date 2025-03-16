@@ -1,5 +1,5 @@
 // app/(doctor)/conversations.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,10 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/utils/supabase';
 import { getProfileWithCache } from '@/utils/profileCacheService';
 import * as Notifications from 'expo-notifications';
-import { 
-  playMessageReceivedSound, 
-  setUnreadMessageCount 
-} from '@/utils/notificationService';
+import { playMessageReceivedSound } from '@/utils/notificationService';
 
 // Configure notifications
 Notifications.setNotificationHandler({
@@ -47,25 +44,22 @@ export default function DoctorConversationsScreen() {
   
   // Setup notifications
   useEffect(() => {
+    // Request notification permissions
     const requestNotificationPermissions = async () => {
-      try {
-        const { status: existingStatus } = await Notifications.getPermissionsAsync();
-        let finalStatus = existingStatus;
-        
-        if (existingStatus !== 'granted') {
-          const { status } = await Notifications.requestPermissionsAsync();
-          finalStatus = status;
-        }
-        
-        if (finalStatus === 'granted') {
-          console.log('Notification permissions granted');
-          setNotificationsEnabled(true);
-        } else {
-          console.log('Notification permissions denied');
-          setNotificationsEnabled(false);
-        }
-      } catch (error) {
-        console.error('Error requesting notification permissions:', error);
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      
+      if (finalStatus === 'granted') {
+        console.log('Notification permissions granted');
+        setNotificationsEnabled(true);
+      } else {
+        console.log('Notification permissions denied');
+        setNotificationsEnabled(false);
       }
     };
     
@@ -81,11 +75,9 @@ export default function DoctorConversationsScreen() {
   
   // Setup message subscription
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user) return;
     
-    console.log('Setting up message subscription for doctor:', user.id);
-    
-    // Subscribe to new messages for this doctor's conversations
+    // Subscribe to new messages for all the doctor's conversations
     const subscription = supabase
       .channel('doctor-message-notifications')
       .on('postgres_changes', {
@@ -106,17 +98,12 @@ export default function DoctorConversationsScreen() {
             // Play sound for new message
             playMessageReceivedSound();
             
-            // Get patient info for the notification
+            // Fetch details for the notification
             const patientProfile = await getProfileWithCache(convo.user_id);
             const patientName = patientProfile?.full_name || 'Patient';
             
             // Update unread count
-            setTotalUnread(prev => {
-              const newCount = prev + 1;
-              // Update app badge count
-              setUnreadMessageCount(newCount);
-              return newCount;
-            });
+            setTotalUnread(prev => prev + 1);
             
             // Show notification if permissions are granted
             if (notificationsEnabled) {
@@ -143,44 +130,25 @@ export default function DoctorConversationsScreen() {
     return () => {
       supabase.removeChannel(subscription);
     };
-  }, [user?.id, notificationsEnabled]);
+  }, [user, notificationsEnabled]);
   
   // Update conversations when a new message is received
-  const refreshConversationsWithNewMessage = useCallback((conversationId, message) => {
-    setConversations(prev => {
-      // First check if the conversation exists in the current list
-      const existingConversation = prev.find(convo => convo.id === conversationId);
-      
-      if (existingConversation) {
-        // Update existing conversation
-        return prev.map(convo => {
-          if (convo.id === conversationId) {
-            return {
-              ...convo,
-              lastMessage: message,
-              unreadCount: (convo.unreadCount || 0) + 1,
-              updated_at: message.created_at // Update timestamp to move it to top
-            };
-          }
-          return convo;
-        }).sort((a, b) => {
-          // Sort to move the updated conversation to the top
-          const dateA = new Date(a.updated_at || a.created_at || 0);
-          const dateB = new Date(b.updated_at || b.created_at || 0);
-          return dateB - dateA;
-        });
-      } else {
-        // If conversation isn't in the list but should be (based on filter)
-        // We'll refresh the entire list
-        loadAllData();
-        return prev;
+  const refreshConversationsWithNewMessage = (conversationId, message) => {
+    setConversations(prev => prev.map(convo => {
+      if (convo.id === conversationId) {
+        // Update this conversation with the new message and increment unread count
+        return {
+          ...convo,
+          lastMessage: message,
+          unreadCount: (convo.unreadCount || 0) + 1,
+          updated_at: message.created_at // Update the timestamp to move it to the top
+        };
       }
-    });
-  }, []);
+      return convo;
+    }));
+  };
   
   const loadAllData = async () => {
-    if (!user?.id) return;
-    
     setIsLoading(true);
     try {
       // Get conversations, approved requests, and pending requests
@@ -212,9 +180,6 @@ export default function DoctorConversationsScreen() {
       });
       setTotalUnread(unreadCount);
       
-      // Update app badge count
-      setUnreadMessageCount(unreadCount);
-      
     } catch (error) {
       console.error('Error loading all data:', error);
     } finally {
@@ -224,8 +189,6 @@ export default function DoctorConversationsScreen() {
   };
   
   const loadConversations = async () => {
-    if (!user?.id) return [];
-    
     try {
       console.log("Loading doctor conversations");
       const conversationsData = await ConversationService.getDoctorConversations(user.id);
@@ -406,10 +369,10 @@ export default function DoctorConversationsScreen() {
     return Array.from(conversationMap.values());
   };
   
-  const onRefresh = useCallback(() => {
+  const onRefresh = () => {
     setRefreshing(true);
     loadAllData();
-  }, []);
+  };
   
   const handleCloseConversation = async (conversationId) => {
     try {
@@ -430,7 +393,7 @@ export default function DoctorConversationsScreen() {
     }
   };
   
-  // Start a new conversation with a patient
+  // Alternative implementation using the PostgreSQL function
   const startConversation = async (item) => {
     if (!item.patientId || !item.requestId) {
       console.error("Missing patient or request ID, cannot start conversation");
@@ -511,7 +474,6 @@ export default function DoctorConversationsScreen() {
     }
   };
   
-  // Filter conversations based on selected filter
   const filteredConversations = conversations.filter(convo => {
     if (filter === 'all') return true;
     if (filter === 'active' && convo.status === 'pending_start') return true; // Include pending_start in active filter
@@ -535,8 +497,11 @@ export default function DoctorConversationsScreen() {
     return () => subscription.remove();
   }, []);
   
-  // Memoize the renderConversationItem to optimize performance
-  const renderConversationItem = useCallback(({ item }) => {
+  // Fix for renderConversationItem function
+  const renderConversationItem = ({ item }) => {
+    // Debug the item structure to identify any issues
+    console.log(`Rendering item with ID: ${item?.id || 'unknown'}, status: ${item?.status}`);
+    
     if (!item) {
       console.error("Received undefined item in renderConversationItem");
       return null;
@@ -615,14 +580,7 @@ export default function DoctorConversationsScreen() {
               
               <View className="flex-row items-center justify-between mt-1">
                 <View className="flex-row items-center">
-                  {hasUnread && (
-                    <View className="flex-row items-center mr-2">
-                      <View className="h-2 w-2 bg-emerald-500 rounded-full mr-1" />
-                      <Text className="text-emerald-600 text-xs font-rubik font-medium">
-                        {item.unreadCount} {item.unreadCount === 1 ? 'new message' : 'new messages'}
-                      </Text>
-                    </View>
-                  )}
+               
                   
                   <View className={`rounded-full px-2 py-0.5 ${
                     isPendingStart ? 'bg-amber-100' :
@@ -683,8 +641,9 @@ export default function DoctorConversationsScreen() {
         </View>
       </TouchableOpacity>
     );
-  }, []);
+  };
   
+  // Add this return statement
   return (
     <View className="flex-1 bg-gray-50">
       <StatusBar style="light" />
@@ -708,13 +667,7 @@ export default function DoctorConversationsScreen() {
           </View>
           
           {/* Unread message count badge */}
-          {totalUnread > 0 && (
-            <View className="bg-white rounded-full px-2 py-1">
-              <Text className="text-emerald-600 font-rubik-bold text-xs">
-                {totalUnread} unread
-              </Text>
-            </View>
-          )}
+          
         </View>
         
         {/* Filter tabs */}
@@ -782,7 +735,7 @@ export default function DoctorConversationsScreen() {
         <FlatList
           data={filteredConversations}
           renderItem={renderConversationItem}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: 16 }}
           refreshControl={
             <RefreshControl

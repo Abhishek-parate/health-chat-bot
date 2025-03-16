@@ -18,6 +18,7 @@ import { ConversationService, MessageService } from '@/lib/supabaseService';
 import { LinearGradient } from 'expo-linear-gradient';
 import { clearUnreadMessageCount } from '@/utils/notificationService';
 import { getProfileWithCache } from '@/utils/profileCacheService'; // Using cached profiles
+import { DoctorChatInterface } from '@/components/chat/DoctorChatInterface';
 
 export default function DoctorChatScreen() {
   const router = useRouter();
@@ -304,7 +305,7 @@ export default function DoctorChatScreen() {
       >
         <View className="flex-1">
           {/* Chat Interface - using our optimized version */}
-          <ChatInterface
+          <DoctorChatInterface
             conversationId={conversation?.id}
             initialMessages={messages}
             onSendMessage={handleSendMessage}
