@@ -7,15 +7,20 @@ import { Redirect } from 'expo-router';
 import { Image, Text, View } from 'react-native';
 import icons from "@/constants/icons";
 
-const TabIcon = ({
-  focused,
-  icon,
-  title,
-}: {
+type TabIconProps = {
   focused: boolean;
-  icon: any;
   title: string;
-}) => (
+};
+
+type ImageTabIconProps = TabIconProps & {
+  icon: any;
+};
+
+type IonTabIconProps = TabIconProps & {
+  name: any;
+};
+
+const TabIcon = ({ focused, icon, title }: ImageTabIconProps) => (
   <View className="flex-1 mt-3 flex flex-col items-center">
     <Image
       source={icon}
@@ -33,16 +38,7 @@ const TabIcon = ({
   </View>
 );
 
-// Custom tab icon using Ionicons
-const IonTabIcon = ({
-  focused,
-  name,
-  title,
-}: {
-  focused: boolean;
-  name: any;
-  title: string;
-}) => (
+const IonTabIcon = ({ focused, name, title }: IonTabIconProps) => (
   <View className="flex-1 mt-3 flex flex-col items-center">
     <Ionicons
       name={name}
@@ -70,8 +66,8 @@ export default function DoctorLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#4f46e5',
-        tabBarInactiveTintColor: '#64748b',
+        tabBarActiveTintColor: '#0061FF',
+        tabBarInactiveTintColor: '#666876',
         tabBarShowLabel: false,
         tabBarStyle: {
           borderTopWidth: 1,
@@ -85,9 +81,10 @@ export default function DoctorLayout() {
           fontSize: 12,
           fontWeight: '500',
         },
-        headerShown: false, // Remove all headers to avoid double header
+        headerShown: false,
       }}
     >
+      {/* Main tabs */}
       <Tabs.Screen
         name="dashboard"
         options={{
@@ -119,16 +116,16 @@ export default function DoctorLayout() {
           tabBarIcon: ({ focused }) => <IonTabIcon focused={focused} name="people-outline" title="Patients" />,
         }}
       />
-        <Tabs.Screen
+      
+      <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
           tabBarIcon: ({ focused }) => <IonTabIcon focused={focused} name="person-outline" title="Profile" />,
         }}
       />
-
       
-      {/* Hidden screens */}
+      {/* Hidden screens - not shown in tab bar */}
       <Tabs.Screen
         name="chat"
         options={{
@@ -159,6 +156,13 @@ export default function DoctorLayout() {
       
       <Tabs.Screen
         name="patient-details"
+        options={{
+          href: null,
+        }}
+      />
+      
+      <Tabs.Screen
+        name="users"
         options={{
           href: null,
         }}

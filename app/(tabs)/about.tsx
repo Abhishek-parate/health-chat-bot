@@ -79,8 +79,13 @@ const AboutScreen = () => {
         </View>
         
         <View className="flex-row items-center">
-          <View className="w-16 h-16 bg-white/20 rounded-full items-center justify-center mr-4">
-            <Text className="text-4xl">🩺</Text>
+          <View className="w-16 h-16  rounded-full items-center justify-center mr-4 bg-white">
+            {/* Load the app logo image */}
+            <Image 
+              source={require('@/assets/images/logo.png')} 
+              className="w-12 h-12"
+              resizeMode="contain"
+            />
           </View>
           <View>
             <Text className="text-white text-lg font-semibold mb-1">Health Sync</Text>
@@ -156,13 +161,15 @@ const AboutScreen = () => {
           
           <TouchableOpacity 
             className="flex-row items-center py-3 border-b border-gray-100"
+            onPress={() => Linking.openURL('mailto:support@healthsync.com')}
           >
             <Ionicons name="mail" size={20} color="#4f46e5" />
-            <Text className="text-gray-800 ml-3">support@Health Sync.com</Text>
+            <Text className="text-gray-800 ml-3">support@healthsync.com</Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
             className="flex-row items-center py-3 border-b border-gray-100"
+            onPress={() => Linking.openURL('https://healthsync.com/help')}
           >
             <Ionicons name="help-circle" size={20} color="#4f46e5" />
             <Text className="text-gray-800 ml-3">Help Center</Text>
@@ -170,6 +177,7 @@ const AboutScreen = () => {
           
           <TouchableOpacity 
             className="flex-row items-center py-3 border-b border-gray-100"
+            onPress={() => Linking.openURL('https://healthsync.com/privacy')}
           >
             <Ionicons name="shield" size={20} color="#4f46e5" />
             <Text className="text-gray-800 ml-3">Privacy Policy</Text>
@@ -177,6 +185,7 @@ const AboutScreen = () => {
           
           <TouchableOpacity 
             className="flex-row items-center py-3"
+            onPress={() => Linking.openURL('https://healthsync.com/terms')}
           >
             <Ionicons name="document-text" size={20} color="#4f46e5" />
             <Text className="text-gray-800 ml-3">Terms of Service</Text>
