@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { MessageService } from '@/lib/supabaseService';
 import { clearUnreadMessageCount } from '@/utils/notificationService';
+import { useAuth } from '@/contexts/AuthProvider';
 
 /**
  * A hook that listens for notification responses and handles them appropriately
@@ -11,18 +12,19 @@ import { clearUnreadMessageCount } from '@/utils/notificationService';
  */
 export function useNotificationHandler(userId: string | undefined) {
   const router = useRouter();
+  const { userRole } = useAuth();
 
   useEffect(() => {
     if (!userId) return;
     
     // Set up notification listener
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
-      handleNotificationResponse(response, userId, router);
+      handleNotificationResponse(response, userId, router, userRole);
     });
     
     // Clean up the subscription
     return () => subscription.remove();
-  }, [userId, router]);
+  }, [userId, router, userRole]);
 }
 
 /**
@@ -31,7 +33,8 @@ export function useNotificationHandler(userId: string | undefined) {
 export async function handleNotificationResponse(
   response: Notifications.NotificationResponse, 
   userId: string,
-  router: any
+  router: any,
+  userRole: string
 ) {
   try {
     console.log('Notification response received');
@@ -51,16 +54,25 @@ export async function handleNotificationResponse(
         await clearUnreadMessageCount(conversationId);
       }
       
-      // Determine if it's a doctor or patient conversation and navigate accordingly
-      if (data.isDoctor) {
+      // Route to the appropriate interface based on user role
+      if (userRole === 'doctor') {
+        console.log('Routing to doctor chat interface');
         router.push({
           pathname: '/(doctor)/chat',
           params: { conversationId }
         });
-      } else {
+      } else if (userRole === 'admin') {
+        console.log('Routing to admin chat interface');
         router.push({
-          pathname: '/(tabs)/chat',
+          pathname: '/(admin)/chat',
           params: { conversationId }
+        });
+      } else {
+        // Default user interface
+        console.log('Routing to user chat interface');
+        router.push({
+          pathname: '/chat',
+          params: { id: conversationId }
         });
       }
     }

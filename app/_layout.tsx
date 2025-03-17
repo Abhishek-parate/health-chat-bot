@@ -7,6 +7,7 @@ import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 
 import AuthProvider from '@/contexts/AuthProvider';
+import RouteProtector from '@/components/RouteProtector';
 import PatientChatNotification from '@/components/PatientChatNotification';
 import DoctorChatNotification from '@/components/DoctorChatNotification';
 import { initSounds, cleanupSounds } from '@/utils/notificationService';
@@ -112,36 +113,38 @@ export default function RootLayout() {
     return <ErrorScreen message={error} />;
   }
 
-  // Wrap the app with Auth Provider, Notification Handler, and both Patient and Doctor notification components
+  // Wrap the app with Auth Provider, RouteProtector, Notification Handler, and both notification components
   return (
     <>
       <StatusBar style="auto" />
       <AuthProvider>
-        <NotificationHandlerWrapper>
-          {/* First the DoctorChatNotification to handle messages from patients */}
-          <DoctorChatNotification>
-            {/* Then the PatientChatNotification to handle messages from doctors */}
-            <PatientChatNotification>
-              <Stack 
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: '#f8fafc' },
-                  animation: 'slide_from_right',
-                }}
-              >
-                <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-                <Stack.Screen 
-                  name="(auth)" 
-                  options={{ 
-                    animation: 'slide_from_bottom',
-                    presentation: 'modal'
-                  }} 
-                />
-                <Stack.Screen name="(doctor)" options={{ animation: 'fade' }} />
-              </Stack>
-            </PatientChatNotification>
-          </DoctorChatNotification>
-        </NotificationHandlerWrapper>
+        <RouteProtector>
+          <NotificationHandlerWrapper>
+            {/* First the DoctorChatNotification to handle messages from patients */}
+            <DoctorChatNotification>
+              {/* Then the PatientChatNotification to handle messages from doctors */}
+              <PatientChatNotification>
+                <Stack 
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: { backgroundColor: '#f8fafc' },
+                    animation: 'slide_from_right',
+                  }}
+                >
+                  <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+                  <Stack.Screen 
+                    name="(auth)" 
+                    options={{ 
+                      animation: 'slide_from_bottom',
+                      presentation: 'modal'
+                    }} 
+                  />
+                  <Stack.Screen name="(doctor)" options={{ animation: 'fade' }} />
+                </Stack>
+              </PatientChatNotification>
+            </DoctorChatNotification>
+          </NotificationHandlerWrapper>
+        </RouteProtector>
       </AuthProvider>
     </>
   );

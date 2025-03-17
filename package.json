@@ -1,5 +1,5 @@
 {
-  "name": "health-chat-bot",
+  "name": "HealthSync",
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {

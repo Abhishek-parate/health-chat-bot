@@ -211,7 +211,6 @@ export default function DoctorProfileScreen() {
           </View>
           
           <TouchableOpacity 
-            onPress={() => router.push('/edit-profile')}
             className="bg-white/20 p-2 rounded-full"
           >
             <Ionicons name="pencil" size={18} color="white" />
@@ -349,7 +348,6 @@ export default function DoctorProfileScreen() {
               )}
               
               <TouchableOpacity 
-                onPress={() => router.push('/edit-profile')}
                 className="bg-emerald-100 py-2 rounded-lg items-center mt-3"
               >
                 <Text className="text-emerald-700 font-rubik-medium">Edit Professional Info</Text>

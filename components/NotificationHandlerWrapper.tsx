@@ -1,20 +1,28 @@
 // components/NotificationHandlerWrapper.tsx
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthProvider';
-import { useNotificationHandler } from '@/utils/notificationHandler';
+import { useNotificationHandler, setupNotificationHandler } from '@/utils/notificationHandler';
 
 interface NotificationHandlerWrapperProps {
   children: React.ReactNode;
 }
 
-const NotificationHandlerWrapper: React.FC<NotificationHandlerWrapperProps> = ({ children }) => {
-  const { user } = useAuth();
+export default function NotificationHandlerWrapper({ children }: NotificationHandlerWrapperProps) {
+  const { user, userRole } = useAuth();
   
-  // Use the notification handler hook to set up notification response handling
+  // Set up notification handler
   useNotificationHandler(user?.id);
   
-  // This is just a wrapper component, render the children
+  // Initialize notification system
+  useEffect(() => {
+    setupNotificationHandler().then(granted => {
+      if (granted) {
+        console.log('Notification permissions granted');
+      } else {
+        console.warn('Notification permissions denied');
+      }
+    });
+  }, []);
+  
   return <>{children}</>;
-};
-
-export default NotificationHandlerWrapper;
+}

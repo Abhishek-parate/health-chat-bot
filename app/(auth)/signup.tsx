@@ -2,18 +2,20 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
     View, 
     Text, 
-    TextInput, 
-    TouchableOpacity, 
     Image, 
     Platform,
     SafeAreaView, 
     ScrollView,
     StatusBar,
     KeyboardAvoidingView,
-    Alert
+    Alert,
+    TextInput,
+    TouchableOpacity,
+    ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import icons from '@/constants/icons';
 import { supabase } from "@/utils/supabase";
 import * as WebBrowser from 'expo-web-browser';
@@ -171,13 +173,13 @@ export default function SignupScreen() {
     };
 
     // Input styles based on validation state
-    const getInputStyle = (error) => {
-        return error ? "border-danger" : "border-gray-200";
+    const getInputBorderClass = (error) => {
+        return error ? "border-red-500" : "border-gray-300";
     };
 
     const renderRegisterScreen = () => (
         <SafeAreaView className="flex-1 bg-white">
-            <StatusBar barStyle="light-content" backgroundColor="#0061FF" />
+            <StatusBar barStyle="light-content" backgroundColor="#4f46e5" />
             <KeyboardAvoidingView 
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 className="flex-1"
@@ -189,130 +191,152 @@ export default function SignupScreen() {
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={{ flexGrow: 1 }}
                 >
-                    {/* Purple background with illustration */}
-                    <View className="h-64 bg-primary-400 px-6 pt-6 pb-4 relative">
-                        <View className="items-center justify-center flex-1">
-                            <Image 
+                    {/* Gradient header with illustration */}
+                    <LinearGradient
+                                           colors={['#4f46e5', '#7c3aed']}
+                                           start={{ x: 0, y: 0 }}
+                                           end={{ x: 1, y: 1 }}
+                                           style={{ 
+                                             paddingTop: 48, 
+                                             paddingBottom: 24, 
+                                             paddingHorizontal: 20,
+                                             borderBottomLeftRadius: 24, 
+                                             borderBottomRightRadius: 24
+                                         }}
+                                       >
+                        <View className="items-center justify-center">
+                            <Image
                                 source={illustrationCreate} 
-                                className="w-48 h-48" 
+                                className="w-40 h-40"
                                 resizeMode="contain"
                                 accessibilityLabel="Registration illustration" 
                             />
                         </View>
+                        
+                        {/* App name and tagline */}
+                        <View className="mt-2">
+                                                   <Text className="text-white text-3xl font-bold text-center">
+                                                       Health Sync
+                                                   </Text>
+                                                   <Text className="text-white text-base text-center opacity-90 mt-1">
+                                                       Your health, our priority
+                                                   </Text>
+                                               </View>
+                        
                         {/* Decorative elements */}
-                        <View className="absolute -bottom-4 -left-10 w-24 h-24 rounded-full bg-primary-400 opacity-30" />
-                        <View className="absolute top-10 right-0 w-16 h-16 rounded-full bg-primary-400 opacity-30" />
-                    </View>
+                        <View className="absolute -bottom-4 -left-10 w-24 h-24 rounded-full bg-white opacity-10" />
+                        <View className="absolute top-10 right-0 w-16 h-16 rounded-full bg-white opacity-10" />
+                    </LinearGradient>
                     
-                    {/* Form container with shadow */}
-                    <View className="bg-white rounded-t-3xl -mt-6 flex-1 px-6 pb-10 shadow-lg">
-                        {/* App logo */}
-                        <View className="flex-row justify-center ">
-                            <Image 
-                                source={icons.logo} 
-                                className="w-40 h-40" 
-                                resizeMode="contain"
-                                accessibilityLabel="App logo" 
-                            />
-                        </View>
-                        
-                        <Text className="text-black-300 text-2xl font-rubik-semibold mb-4 text-center">
-                            Create New Account
-                        </Text>
-                        
-                        {/* Email input with validation */}
-                        <Text className="text-primary-400 text-sm mb-1 font-rubik-medium">Email</Text>
-                        <View className={`mb-1 border ${getInputStyle(emailError)} rounded-xl px-4 py-2 flex-row items-center bg-accent-100`}>
-                            <Ionicons name="mail-outline" size={18} color="#8C8E98" />
-                            <TextInput
-                                placeholder="name@example.com"
-                                className="flex-1 h-12 ml-2 font-rubik"
-                                keyboardType="email-address"
-                                value={email}
-                                onChangeText={(text) => {
-                                    setEmail(text);
-                                    if (emailError) validateEmail(text);
-                                }}
-                                onBlur={() => validateEmail(email)}
-                                autoCapitalize="none"
-                                accessibilityLabel="Email input field"
-                                testID="email-input"
-                            />
-                        </View>
-                        {emailError ? <Text className="text-danger text-xs mb-3 ml-1 font-rubik">{emailError}</Text> : <View className="mb-3" />}
-                        
-                        {/* Name input with validation */}
-                        <Text className="text-primary-400 text-sm mb-1 font-rubik-medium">Name</Text>
-                        <View className={`mb-1 border ${getInputStyle(nameError)} rounded-xl px-4 py-2 flex-row items-center bg-accent-100`}>
-                            <Ionicons name="person-outline" size={18} color="#8C8E98" />
-                            <TextInput
-                                placeholder="Your full name"
-                                className="flex-1 h-12 ml-2 font-rubik"
-                                value={name}
-                                onChangeText={(text) => {
-                                    setName(text);
-                                    if (nameError) validateName(text);
-                                }}
-                                onBlur={() => validateName(name)}
-                                accessibilityLabel="Name input field"
-                                testID="name-input"
-                            />
-                        </View>
-                        {nameError ? <Text className="text-danger text-xs mb-3 ml-1 font-rubik">{nameError}</Text> : <View className="mb-3" />}
-                        
-                        {/* Password input with validation */}
-                        <Text className="text-primary-400 text-sm mb-1 font-rubik-medium">Password</Text>
-                        <View className={`mb-1 border ${getInputStyle(passwordError)} rounded-xl px-4 py-2 flex-row items-center bg-accent-100`}>
-                            <Ionicons name="lock-closed-outline" size={18} color="#8C8E98" />
-                            <TextInput
-                                placeholder="••••••••"
-                                className="flex-1 h-12 ml-2 font-rubik"
-                                secureTextEntry={!showPassword}
-                                value={password}
-                                onChangeText={(text) => {
-                                    setPassword(text);
-                                    if (passwordError) validatePassword(text);
-                                }}
-                                onBlur={() => validatePassword(password)}
-                                accessibilityLabel="Password input field"
-                                testID="password-input"
-                            />
-                            <TouchableOpacity 
-                                onPress={() => setShowPassword(!showPassword)}
-                                className="p-2" 
-                                accessibilityLabel={showPassword ? "Hide password" : "Show password"}
-                                accessibilityRole="button"
-                            >
-                                <Ionicons 
-                                    name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                                    size={20} 
-                                    color="#8C8E98" 
-                                />
-                            </TouchableOpacity>
-                        </View>
-                        {passwordError ? <Text className="text-danger text-xs mb-3 ml-1 font-rubik">{passwordError}</Text> : <View className="mb-6" />}
-                        
-                        {/* Register button with elevation */}
-                        <TouchableOpacity 
-                            className="bg-primary-400 py-3.5 rounded-xl items-center mb-5 shadow-md"
-                            onPress={handleRegister}
-                            activeOpacity={0.8}
-                            accessibilityLabel="Register button"
-                            testID="register-button"
-                            disabled={loading}
-                        >
-                            <Text className="text-white text-lg font-rubik-bold tracking-wide">
-                                {loading ? "REGISTERING..." : "REGISTER"}
+                    {/* Form container */}
+                    <View className="px-5 flex-1">
+                       {/* App logo */}
+                                             <View className="items-center ">
+                                                  <Image
+                                                      source={icons.logo}
+                                                      className="w-32 h-32"
+                                                      resizeMode="contain"
+                                                      accessibilityLabel="App logo"
+                                                  />
+                                              </View>
+                        <View className="bg-white  ">
+                            <Text className="text-gray-800 text-2xl font-semibold  text-center">
+                                Create Account
                             </Text>
-                        </TouchableOpacity>
-                        
-                        {/* Login link */}
-                        <View className="flex-row justify-center mb-10">
-                            <Text className="text-black-100 font-rubik">Already have an account? </Text>
-                            <Link href="/login" replace>
-                                <Text className="text-primary-400 font-rubik-medium">Login here</Text>
-                            </Link>
+                            
+                            {/* Email input with validation */}
+                            <View className="mb-4">
+                                <Text className="text-gray-600 text-sm mb-1">Email</Text>
+                                <View className={`flex-row items-center border ${getInputBorderClass(emailError)} rounded-xl px-4 py-2 bg-gray-50`}>
+                                    <Ionicons name="mail-outline" size={18} color="#6B7280" />
+                                    <TextInput
+                                        placeholder="Email address"
+                                        className="flex-1 h-12 ml-2 text-gray-800"
+                                        keyboardType="email-address"
+                                        value={email}
+                                        onChangeText={(text) => {
+                                            setEmail(text);
+                                            if (emailError) validateEmail(text);
+                                        }}
+                                        onBlur={() => validateEmail(email)}
+                                        autoCapitalize="none"
+                                    />
+                                </View>
+                                {emailError ? <Text className="text-red-500 text-xs mt-1">{emailError}</Text> : null}
+                            </View>
+                            
+                            {/* Name input with validation */}
+                            <View className="mb-4">
+                                <Text className="text-gray-600 text-sm mb-1">Full Name</Text>
+                                <View className={`flex-row items-center border ${getInputBorderClass(nameError)} rounded-xl px-4 py-2 bg-gray-50`}>
+                                    <Ionicons name="person-outline" size={18} color="#6B7280" />
+                                    <TextInput
+                                        placeholder="Your full name"
+                                        className="flex-1 h-12 ml-2 text-gray-800"
+                                        value={name}
+                                        onChangeText={(text) => {
+                                            setName(text);
+                                            if (nameError) validateName(text);
+                                        }}
+                                        onBlur={() => validateName(name)}
+                                    />
+                                </View>
+                                {nameError ? <Text className="text-red-500 text-xs mt-1">{nameError}</Text> : null}
+                            </View>
+                            
+                            {/* Password input with show/hide toggle */}
+                            <View className="mb-6">
+                                <Text className="text-gray-600 text-sm mb-1">Password</Text>
+                                <View className={`flex-row items-center border ${getInputBorderClass(passwordError)} rounded-xl px-4 py-2 bg-gray-50`}>
+                                    <Ionicons name="lock-closed-outline" size={18} color="#6B7280" />
+                                    <TextInput
+                                        placeholder="Enter password"
+                                        className="flex-1 h-12 ml-2 text-gray-800"
+                                        secureTextEntry={!showPassword}
+                                        value={password}
+                                        onChangeText={(text) => {
+                                            setPassword(text);
+                                            if (passwordError) validatePassword(text);
+                                        }}
+                                        onBlur={() => validatePassword(password)}
+                                    />
+                                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                                        <Ionicons
+                                            name={showPassword ? "eye-off-outline" : "eye-outline"}
+                                            size={20}
+                                            color="#6B7280"
+                                        />
+                                    </TouchableOpacity>
+                                </View>
+                                {passwordError ? <Text className="text-red-500 text-xs mt-1">{passwordError}</Text> : null}
+                            </View>
+                            
+                            {/* Register button */}
+                            <TouchableOpacity
+                                className={`bg-indigo-600 py-3.5 rounded-xl items-center justify-center mt-2 mb-4 ${loading ? "opacity-70" : ""}`}
+                                onPress={handleRegister}
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <ActivityIndicator size="small" color="white" />
+                                ) : (
+                                    <Text className="text-white text-base font-semibold">
+                                        Create Account
+                                    </Text>
+                                )}
+                            </TouchableOpacity>
+                            
+                            {/* Login link */}
+                            <View className="flex-row justify-center mt-2">
+                                <Text className="text-gray-600">Already have an account? </Text>
+                                <Link href="/login" replace>
+                                    <Text className="text-indigo-600 font-medium">Sign In</Text>
+                                </Link>
+                            </View>
                         </View>
+                        
+                        {/* Optional: App logo */}
+                       
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>
@@ -320,75 +344,97 @@ export default function SignupScreen() {
     );
 
     const renderConfirmationScreen = () => (
-        <SafeAreaView className="flex-1 bg-black-300">
-            <StatusBar barStyle="light-content" backgroundColor="#191D31" />
-            <View className="flex-1 px-6 pt-6">
-                <TouchableOpacity 
-                    className="w-10 h-10 justify-center items-start mb-4"
-                    onPress={() => setCurrentScreen('register')}
-                    accessibilityLabel="Go back to registration"
+        <SafeAreaView className="flex-1 bg-white">
+            <StatusBar barStyle="light-content" backgroundColor="#4f46e5" />
+            <KeyboardAvoidingView 
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                className="flex-1"
+            >
+                <ScrollView 
+                    className="flex-1"
+                    contentContainerStyle={{ flexGrow: 1 }}
                 >
-                    <Ionicons name="arrow-back" size={24} color="gray" />
-                </TouchableOpacity>
-                
-                {/* Main confirmation card with shadow and better styling */}
-                <View className="bg-primary-400 rounded-3xl p-8 mt-8 items-center shadow-xl">
-                    <View className="w-20 h-20 bg-white/20 rounded-full items-center justify-center mb-4">
-                        <Image 
-                            source={mailConfirmation} 
-                            className="w-14 h-14" 
-                            resizeMode="contain"
-                            accessibilityLabel="Email confirmation icon" 
-                        />
-                    </View>
-                    
-                    <Text className="text-white text-2xl font-rubik-bold text-center mb-3">
-                        Thank you for your registration!
-                    </Text>
-                    
-                    <Text className="text-white/90 text-center mb-8 leading-5 font-rubik">
-                        We're glad you're here!{'\n\n'}
-                        Before you start exploring, we just sent you the email confirmation.
-                    </Text>
-                    
-                    <TouchableOpacity 
-                        className="bg-black-300 py-3.5 px-6 rounded-xl flex-row items-center"
-                        onPress={handleResendEmail}
-                        activeOpacity={0.8}
-                        disabled={loading}
-                        accessibilityLabel="Resend email confirmation button"
+                    {/* Gradient header */}
+                    <LinearGradient
+                        colors={['#4f46e5', '#7c3aed']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        className="pt-12 pb-14 px-5 rounded-b-3xl shadow-lg"
                     >
-                        <Ionicons name="mail-outline" size={18} color="white" />
-                        <Text className="text-white font-rubik-medium ml-2">
-                            {loading ? "Sending..." : "Resend email confirmation"}
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-                
-                {/* Login link at bottom */}
-                <View className="absolute bottom-10 left-6 right-6">
-                    <Link 
-                        href="/login" 
-                        replace
-                        asChild
-                    >
-                        <TouchableOpacity 
-                            className="bg-black-200 py-3.5 rounded-xl items-center mb-5 shadow-md"
-                            activeOpacity={0.8}
-                            accessibilityLabel="Go to login screen"
-                        >
-                            <Text className="text-white text-lg font-rubik-bold tracking-wide">GO TO LOGIN</Text>
-                        </TouchableOpacity>
-                    </Link>
+                        <View className="flex-row items-center">
+                            <TouchableOpacity 
+                                className="p-2"
+                                onPress={() => setCurrentScreen('register')}
+                            >
+                                <Ionicons name="arrow-back" size={24} color="white" />
+                            </TouchableOpacity>
+                        </View>
+                        
+                        <View className="items-center mt-4">
+                            <View className="w-24 h-24 bg-white/20 rounded-full items-center justify-center mb-4">
+                                <Image 
+                                    source={mailConfirmation} 
+                                    className="w-16 h-16"
+                                    resizeMode="contain"
+                                    accessibilityLabel="Email confirmation icon" 
+                                />
+                            </View>
+                            
+                            <Text className="text-white text-2xl font-bold text-center mb-2">
+                                Email Verification
+                            </Text>
+                            <Text className="text-white/90 text-center">
+                                We've sent a verification email to
+                            </Text>
+                            <Text className="text-white font-medium text-center mt-1">
+                                {email}
+                            </Text>
+                        </View>
+                    </LinearGradient>
                     
-                    <View className="flex-row justify-center">
-                        <Text className="text-black-100 font-rubik">Need help? </Text>
-                        <Link href="/support">
-                            <Text className="text-primary-400 font-rubik-medium">Contact support</Text>
-                        </Link>
+                    {/* Confirmation content */}
+                    <View className="px-5 -mt-8">
+                        <View className="bg-white rounded-xl p-6 shadow-lg">
+                            <Text className="text-xl font-semibold text-center mb-4 text-gray-800">
+                                Thank you for registering!
+                            </Text>
+                            
+                            <Text className="text-gray-600 text-center mb-6 leading-5">
+                                Please check your email and follow the link to verify your account. If you don't see it, check your spam folder.
+                            </Text>
+                            
+                            <TouchableOpacity
+                                className={`bg-white border border-indigo-600 py-3.5 rounded-xl items-center justify-center flex-row mb-4 ${loading ? "opacity-70" : ""}`}
+                                onPress={handleResendEmail}
+                                disabled={loading}
+                            >
+                                <Ionicons name="mail-outline" size={18} color="#4F46E5" className="mr-2" />
+                                <Text className="text-indigo-600 text-base font-medium ml-2">
+                                    {loading ? "Sending..." : "Resend Verification Email"}
+                                </Text>
+                            </TouchableOpacity>
+                            
+                            <Link href="/login" replace asChild>
+                                <TouchableOpacity
+                                    className="bg-indigo-600 py-3.5 rounded-xl items-center justify-center"
+                                >
+                                    <Text className="text-white text-base font-semibold">
+                                        Go to Login
+                                    </Text>
+                                </TouchableOpacity>
+                            </Link>
+                        </View>
+                        
+                        {/* Help text */}
+                        <View className="flex-row justify-center mt-6 mb-10">
+                            <Text className="text-gray-600">Need help? </Text>
+                            <Link href="/support">
+                                <Text className="text-indigo-600 font-medium">Contact support</Text>
+                            </Link>
+                        </View>
                     </View>
-                </View>
-            </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 

@@ -14,7 +14,7 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthProvider';
-import { ConversationService, MessageService, DoctorRequestService } from '@/lib/supabaseService';
+import { ConversationService, MessageService, DoctorRequestService, ProfileService } from '@/lib/supabaseService';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/utils/supabase';
 import { getProfileWithCache } from '@/utils/profileCacheService';
@@ -41,6 +41,7 @@ export default function DoctorConversationsScreen() {
   const [filter, setFilter] = useState('active'); // 'active', 'closed', 'all'
   const [totalUnread, setTotalUnread] = useState(0);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [patientProfiles, setPatientProfiles] = useState({});
   
   // Setup notifications
   useEffect(() => {
@@ -100,7 +101,9 @@ export default function DoctorConversationsScreen() {
             
             // Fetch details for the notification
             const patientProfile = await getProfileWithCache(convo.user_id);
-            const patientName = patientProfile?.full_name || 'Patient';
+            const patientName = patientProfile?.full_name 
+              ? `Patient-${patientProfile.full_name}` 
+              : 'Patient';
             
             // Update unread count
             setTotalUnread(prev => prev + 1);
@@ -157,6 +160,25 @@ export default function DoctorConversationsScreen() {
         loadApprovedRequests(),
         loadPendingRequests()
       ]);
+      
+      // Load patient profiles for all conversations
+      const patientIds = new Set();
+      conversationsData.forEach(convo => {
+        if (convo.user_id) patientIds.add(convo.user_id);
+      });
+      approvedRequestsData.forEach(req => {
+        if (req.patientId) patientIds.add(req.patientId);
+      });
+      
+      const profilesMap = {};
+      for (const id of patientIds) {
+        const profile = await getProfileWithCache(id);
+        if (profile) {
+          profilesMap[id] = profile;
+        }
+      }
+      
+      setPatientProfiles(profilesMap);
       
       // Combine approved requests with existing conversations
       const mergedData = mergeConversationsAndRequests(conversationsData, approvedRequestsData);
@@ -267,6 +289,11 @@ export default function DoctorConversationsScreen() {
       const transformedData = data.map(request => {
         const now = new Date().toISOString();
         
+        // Format patient name with prefix
+        const patientName = request.profiles?.full_name 
+          ? `Patient-${request.profiles.full_name}` 
+          : 'Patient';
+        
         // Check if there's a conversation already
         if (request.conversation && request.conversation.id) {
           console.log(`Request ${request.id} has existing conversation: ${request.conversation.id}`);
@@ -291,7 +318,7 @@ export default function DoctorConversationsScreen() {
             created_at: request.created_at,
             updated_at: request.created_at,
             status: 'pending_start', // Special status for conversations not yet started
-            title: `Consultation with ${request.profiles?.full_name || 'Patient'}`,
+            title: `Consultation with ${patientName}`,
             profiles: request.profiles,
             requestId: request.id,
             patientId: request.user_id, // Store the patient ID for later use
@@ -393,7 +420,27 @@ export default function DoctorConversationsScreen() {
     }
   };
   
-  // Alternative implementation using the PostgreSQL function
+  // Get patient name from profiles or patientProfiles map with "Patient-" prefix
+  const getPatientName = (item) => {
+    let name = "";
+    
+    // First check if there's a profiles object from Supabase
+    if (item.profiles?.full_name) {
+      name = item.profiles.full_name;
+    }
+    // Then check our cached profiles
+    else if (item.user_id && patientProfiles[item.user_id]) {
+      name = patientProfiles[item.user_id].full_name;
+    }
+    // Fallback
+    else {
+      return "Patient";  // Return just "Patient" for the fallback case
+    }
+    
+    // Add "Patient-" prefix to the name
+    return `Patient-${name}`;
+  };
+  
   const startConversation = async (item) => {
     if (!item.patientId || !item.requestId) {
       console.error("Missing patient or request ID, cannot start conversation");
@@ -405,10 +452,13 @@ export default function DoctorConversationsScreen() {
       setIsLoading(true);
       console.log(`Starting new conversation with patient ${item.patientId} for request ${item.requestId}`);
       
-      // Create a new conversation using the PostgreSQL function
-      const conversationTitle = item.title || `Consultation with ${item.profiles?.full_name || 'Patient'}`;
+      // Get patient name with the "Patient-" prefix
+      const patientName = getPatientName(item);
       
-      // Use RPC to call our database function (after creating it in SQL Editor)
+      // Create a new conversation using the PostgreSQL function
+      const conversationTitle = item.title || `Consultation with ${patientName}`;
+      
+      // Use RPC to call our database function
       const { data: newConversation, error } = await supabase
         .rpc('create_doctor_conversation', {
           patient_id: item.patientId,
@@ -452,8 +502,6 @@ export default function DoctorConversationsScreen() {
   // Helper function to update the doctor request with the conversation ID
   const updateRequestWithConversation = async (requestId, conversationId) => {
     try {
-      // Since there is no updateRequestConversation method in DoctorRequestService
-      // We need to use the Supabase client directly to update the conversation_id
       const { error } = await supabase
         .from('doctor_requests')
         .update({ 
@@ -497,11 +545,8 @@ export default function DoctorConversationsScreen() {
     return () => subscription.remove();
   }, []);
   
-  // Fix for renderConversationItem function
+  // Render conversation item
   const renderConversationItem = ({ item }) => {
-    // Debug the item structure to identify any issues
-    console.log(`Rendering item with ID: ${item?.id || 'unknown'}, status: ${item?.status}`);
-    
     if (!item) {
       console.error("Received undefined item in renderConversationItem");
       return null;
@@ -535,7 +580,10 @@ export default function DoctorConversationsScreen() {
     // Check if there are unread messages
     const hasUnread = !isPendingStart && (item.unreadCount && item.unreadCount > 0);
     
-    // Handle the item press directly here without a separate function
+    // Get patient name with "Patient-" prefix
+    const patientName = getPatientName(item);
+    
+    // Handle item press
     const onItemPress = () => {
       if (isPendingStart) {
         // For approved requests without conversations, start a new conversation
@@ -565,7 +613,7 @@ export default function DoctorConversationsScreen() {
                 />
               ) : (
                 <Text className="text-indigo-600 font-rubik-bold">
-                  {item.profiles?.full_name?.charAt(0) || 'P'}
+                  {patientName.charAt(0) || 'P'}
                 </Text>
               )}
             </View>
@@ -573,15 +621,13 @@ export default function DoctorConversationsScreen() {
             <View className="flex-1">
               <View className="flex-row items-center justify-between">
                 <Text className="text-gray-800 font-rubik-bold">
-                  {item.profiles?.full_name || 'Patient'}
+                  {patientName}
                 </Text>
                 <Text className="text-gray-500 text-xs font-rubik">{timeLabel}</Text>
               </View>
               
               <View className="flex-row items-center justify-between mt-1">
                 <View className="flex-row items-center">
-               
-                  
                   <View className={`rounded-full px-2 py-0.5 ${
                     isPendingStart ? 'bg-amber-100' :
                     item.status === 'active' ? 'bg-emerald-100' : 'bg-gray-100'
@@ -643,7 +689,6 @@ export default function DoctorConversationsScreen() {
     );
   };
   
-  // Add this return statement
   return (
     <View className="flex-1 bg-gray-50">
       <StatusBar style="light" />
@@ -667,7 +712,11 @@ export default function DoctorConversationsScreen() {
           </View>
           
           {/* Unread message count badge */}
-          
+          {totalUnread > 0 && (
+            <View className="bg-red-500 rounded-full px-2 py-0.5">
+              <Text className="text-white text-xs font-rubik-bold">{totalUnread}</Text>
+            </View>
+          )}
         </View>
         
         {/* Filter tabs */}
@@ -736,7 +785,7 @@ export default function DoctorConversationsScreen() {
           data={filteredConversations}
           renderItem={renderConversationItem}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ padding: 16 }}
+          contentContainerStyle={{ padding: 16, paddingBottom: 80 }} // Add bottom padding for tabs
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

@@ -13,12 +13,11 @@ import {
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/contexts/AuthProvider';
 import { Ionicons } from '@expo/vector-icons';
-import { ChatInterface } from '@/components/chat/ChatInterface'; // Using our optimized version
+import { DoctorChatInterface } from '@/components/chat/DoctorChatInterface';
 import { ConversationService, MessageService } from '@/lib/supabaseService';
 import { LinearGradient } from 'expo-linear-gradient';
 import { clearUnreadMessageCount } from '@/utils/notificationService';
 import { getProfileWithCache } from '@/utils/profileCacheService'; // Using cached profiles
-import { DoctorChatInterface } from '@/components/chat/DoctorChatInterface';
 
 export default function DoctorChatScreen() {
   const router = useRouter();
@@ -223,6 +222,8 @@ export default function DoctorChatScreen() {
     router.replace('/(doctor)/conversations');
   };
   
+  const patientName = patient?.full_name || 'Patient';
+  
   return (
     <SafeAreaView className="flex-1 bg-white">
       {/* Header */}
@@ -240,51 +241,31 @@ export default function DoctorChatScreen() {
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
           
-          {patient ? (
-            <View className="flex-row items-center flex-1">
-              <View className="h-10 w-10 rounded-full bg-white items-center justify-center mr-3 ">
-                {patient.avatar_url ? (
-                  <Image 
-                    source={{ uri: patient.avatar_url }} 
-                    className="h-10 w-10 rounded-full" 
-                  />
-                ) : (
-                  <Text className="text-emerald-600 font-rubik-bold">
-                    {patient.full_name?.charAt(0) || 'P'}
-                  </Text>
-                )}
-              </View>
-              <View>
-                <Text className="text-lg font-rubik-bold text-white">
-                  {patient.full_name || 'Patient'}
+          <View className="flex-row items-center flex-1">
+            <View className="h-10 w-10 rounded-full bg-white items-center justify-center mr-3">
+              {patient?.avatar_url ? (
+                <Image 
+                  source={{ uri: patient.avatar_url }} 
+                  className="h-10 w-10 rounded-full" 
+                />
+              ) : (
+                <Text className="text-emerald-600 font-rubik-bold">
+                  {patientName.charAt(0)}
                 </Text>
-                <View className="flex-row items-center">
-                  <View className="h-2 w-2 rounded-full bg-white mr-1" />
-                  <Text className="text-white text-xs font-rubik">
-                    {conversation?.status === 'active' ? 'Active Consultation' : 'Closed Consultation'}
-                  </Text>
-                </View>
+              )}
+            </View>
+            <View>
+              <Text className="text-lg font-rubik-bold text-white">
+                {patientName}
+              </Text>
+              <View className="flex-row items-center">
+                <View className="h-2 w-2 rounded-full bg-white mr-1" />
+                <Text className="text-white text-xs font-rubik">
+                  {conversation?.status === 'active' ? 'Active Consultation' : 'Closed Consultation'}
+                </Text>
               </View>
             </View>
-          ) : (
-            // Default UI when patient profile not found
-            <View className="flex-row items-center flex-1">
-              <View className="h-10 w-10 rounded-full bg-white items-center justify-center mr-3">
-                <Text className="text-emerald-600 font-rubik-bold">P</Text>
-              </View>
-              <View>
-                <Text className="text-lg font-rubik-bold text-white">
-                  Patient
-                </Text>
-                <View className="flex-row items-center">
-                  <View className="h-2 w-2 rounded-full bg-white mr-1" />
-                  <Text className="text-white text-xs font-rubik">
-                    {conversation?.status === 'active' ? 'Active Consultation' : 'Closed Consultation'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          )}
+          </View>
           
           {conversation?.status === 'active' && (
             <TouchableOpacity
@@ -304,15 +285,16 @@ export default function DoctorChatScreen() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
       >
         <View className="flex-1">
-          {/* Chat Interface - using our optimized version */}
+          {/* Chat Interface */}
           <DoctorChatInterface
             conversationId={conversation?.id}
             initialMessages={messages}
             onSendMessage={handleSendMessage}
             isDoctor={true}
             isDisabled={conversation?.status === 'closed'}
-            userId={user.id} // Pass user ID for realtime subscription
-            isActive={isScreenFocused} // Pass screen focus state to handle unread messages
+            userId={user.id}
+            isActive={isScreenFocused}
+            patientName={patientName} // Pass the patient name to the chat interface
           />
         </View>
         

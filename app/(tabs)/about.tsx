@@ -193,7 +193,7 @@ const AboutScreen = () => {
         </View>
         
         {/* Footer */}
-        <View className="items-center pb-8">
+        <View className="items-center pb-8 mb-14">
           <Text className="text-gray-500 text-sm mb-2">© 2025 Health Sync, Inc.</Text>
           <Text className="text-gray-500 text-sm">All Rights Reserved</Text>
         </View>

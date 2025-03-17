@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "health-chat-bot",
+    "name": "healthsync",
     "slug": "health-chat-bot",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -18,10 +18,10 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.bitlearners.HealthSync"
+      "package": "com.bitlearners.healthsync"
     },
     "web": {
       "bundler": "metro",
@@ -33,7 +33,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
@@ -55,8 +55,8 @@
             "color": "#10b981"
           },
           "sounds": [
-            "./assets/sounds/message-received.wav",
-            "./assets/sounds/message-sent.wav"
+            "./assets/sounds/message_received.wav",
+            "./assets/sounds/message_sent.wav"
           ]
         }
       ]

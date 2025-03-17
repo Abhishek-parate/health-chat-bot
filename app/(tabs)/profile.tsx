@@ -183,7 +183,7 @@ export default function PatientProfileScreen() {
   }
 
   return (
-    <View className="flex-1 bg-gray-50">
+    <SafeAreaView className="flex-1 bg-gray-50">
       <StatusBar style="light" />
       
       {/* Header */}
@@ -242,7 +242,11 @@ export default function PatientProfileScreen() {
         </View>
       </LinearGradient>
       
-      <ScrollView className="flex-1 px-5 pt-6">
+      {/* Use contentContainerStyle to add padding at the bottom for tab bar */}
+      <ScrollView 
+        className="flex-1 px-5"
+        contentContainerStyle={{ paddingTop: 24, paddingBottom: 100 }} // Add extra padding at bottom to avoid tab overlap
+      >
         {/* Metrics Overview */}
         <View className="flex-row justify-between mb-6">
           <View className="bg-white rounded-xl p-4 shadow-sm items-center w-[31%]">
@@ -369,11 +373,11 @@ export default function PatientProfileScreen() {
           </View>
         </View>
         
-        {/* Logout Button */}
+        {/* Logout Button - ensure it's not hidden behind tab bar */}
         <TouchableOpacity
           onPress={handleLogout}
           disabled={isLoggingOut}
-          className={`bg-white rounded-xl py-4 shadow-sm mb-10 flex-row items-center justify-center ${
+          className={`bg-white rounded-xl py-4 shadow-sm flex-row items-center justify-center mb-4 ${
             isLoggingOut ? 'opacity-70' : ''
           }`}
         >
@@ -383,6 +387,6 @@ export default function PatientProfileScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
